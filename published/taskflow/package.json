@@ -29,6 +29,13 @@
       "url": "calendar/",
       "accessLevel": "full",
       "description": "Calendrier interactif avec vue mois/semaine/jour"
+    },
+    {
+      "widgetId": "taskflow-dashboard",
+      "name": "TaskFlow Dashboard",
+      "url": "dashboard/",
+      "accessLevel": "full",
+      "description": "Tableau de bord avec KPIs et statistiques des tâches"
     }
   ]
 }

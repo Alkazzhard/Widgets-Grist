@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gantt - TaskFlow v9</title>
+    <title>Gantt - TaskFlow v14</title>
     <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <style>
@@ -32,7 +32,7 @@
         .btn.primary:hover { background: var(--primary-dark); }
         .btn-nav { padding: 6px 10px; font-size: 0.9rem; }
         .view-controls { display: flex; background: var(--bg); padding: 3px; border-radius: 6px; gap: 2px; }
-        .view-controls .btn { border: none; background: transparent; padding: 5px 10px; border-radius: 4px; }
+        .view-controls .btn { border: none; background: transparent; padding: 5px 10px; border-radius: 4px; color: var(--text); }  /* BUG-03: color explicite */
         .view-controls .btn.active { background: var(--primary); color: white; }
         .current-period { font-weight: 600; font-size: 0.85rem; min-width: 140px; text-align: center; }
         .sort-selector select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 5px; font-size: 0.72rem; background: var(--card-bg); }
@@ -109,6 +109,10 @@
         .gantt-bar .resize-handle.left { left: 0; }
         .gantt-bar .resize-handle.right { right: 0; }
         .gantt-bar-progress { position: absolute; left: 0; top: 0; height: 100%; background: rgba(255,255,255,0.25); border-radius: 4px 0 0 4px; pointer-events: none; }
+        /* GANTT-04: Label externe pour barres étroites */
+        .gantt-bar-external-label { position: absolute; left: 100%; margin-left: 6px; font-size: 0.7rem; font-weight: 500; color: var(--text); white-space: nowrap; pointer-events: none; }
+        .gantt-bar.narrow-bar .gantt-bar-label { display: none; }
+        .gantt-bar:not(.narrow-bar) .gantt-bar-external-label { display: none; }
 
         /* Milestones */
         .gantt-milestone { position: absolute; cursor: pointer; z-index: 15; display: flex; align-items: center; gap: 4px; }
@@ -265,6 +269,17 @@
 
         @media (max-width: 900px) { :root { --task-list-width: 200px; --cell-width: 28px; --panel-width: 320px; } }
         @media (max-width: 700px) { :root { --task-list-width: 140px; --cell-width: 24px; --panel-width: 100%; } .gantt-wrapper.panel-open { margin-right: 0; } .panel { left: 0; width: 100%; } .task-dates, .task-progress-badge { display: none; } .form-row { grid-template-columns: 1fr; } }
+        
+        /* GEN-03: Export Print/PDF */
+        @media print {
+            body { background: white !important; }
+            .header, .filter-bar, .panel, .demo-badge, .filter-dropdown, .btn { display: none !important; }
+            .gantt-wrapper { margin: 0 !important; height: auto !important; }
+            .gantt-container { overflow: visible !important; }
+            .task-list-scroll, .timeline-scroll { overflow: visible !important; height: auto !important; }
+            .gantt-bar, .gantt-milestone { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+            @page { size: landscape; margin: 1cm; }
+        }
     </style>
 </head>
 <body>
@@ -288,9 +303,18 @@
                 <button class="btn" data-view="week" onclick="setView('week')">Sem</button>
                 <button class="btn active" data-view="month" onclick="setView('month')">Mois</button>
                 <button class="btn" data-view="quarter" onclick="setView('quarter')">Trim</button>
+                <button class="btn" data-view="semester" onclick="setView('semester')">6M</button>
+                <button class="btn" data-view="year" onclick="setView('year')">An</button>
             </div>
         </div>
         <div class="header-right">
+            <div class="filter-dropdown" id="exportDropdown">
+                <button class="btn" onclick="toggleFilterMenu('exportDropdown')">📥 Exporter ▾</button>
+                <div class="filter-menu" id="exportDropdownMenu">
+                    <div class="filter-option" onclick="exportPrint()">🖨️ Imprimer / PDF</div>
+                    <div class="filter-option" onclick="exportPNG()">🖼️ Image PNG</div>
+                </div>
+            </div>
             <button class="btn primary" onclick="openCreatePanel()">+ Tâche</button>
         </div>
     </div>
@@ -350,9 +374,20 @@
         const VIEW_CONFIG = {
             week: { label: 'Semaine', unit: 'day', days: 7, cellWidth: 70, navStep: 7 },
             month: { label: 'Mois', unit: 'day', days: 42, cellWidth: 34, navStep: 'month' },
-            quarter: { label: 'Trimestre', unit: 'week', weeks: 13, cellWidth: 45, navStep: 'quarter' }
+            quarter: { label: 'Trimestre', unit: 'week', weeks: 13, cellWidth: 45, navStep: 'quarter' },
+            semester: { label: 'Semestre', unit: 'week', weeks: 26, cellWidth: 24, navStep: 'semester' },
+            year: { label: 'Année', unit: 'month', months: 12, cellWidth: 60, navStep: 'year' }
         };
         const PRIORITY_LABELS = { 1: 'Critique', 2: 'Haute', 3: 'Moyenne', 4: 'Basse' };
+        
+        // Configuration des champs affichés dans le tooltip (personnalisable)
+        const TOOLTIP_FIELDS = [
+            { key: 'priorite', label: 'Priorité', format: (t) => PRIORITY_LABELS[getTaskPriority(t)] },
+            { key: 'dates', label: 'Dates', format: (t) => formatDateShort(gristToDate(t.dateDebut)) + ' → ' + formatDateShort(gristToDate(t.dateEcheance)) },
+            { key: 'projet', label: 'Projet', format: (t) => t.projet ? getProjectName(t.projet) : null },
+            { key: 'progression', label: 'Progression', format: (t) => (t.progression || 0) + '%' },
+            { key: 'assignees', label: 'Assignés', format: (t) => { const a = getAssigneesArray(t); return a.length ? a.map(id => getTeamMemberName(id)).filter(Boolean).join(', ') : null; } }
+        ];
         const PRIORITY_COLORS = { 1: '#ef4444', 2: '#f59e0b', 3: '#3b82f6', 4: '#64748b' };
         const STATUS_LABELS = { todo: 'À faire', inprogress: 'En cours', review: 'En revue', done: 'Terminé' };
         const TYPE_ICONS = { tache: '📋', jalon: '◆', reunion: '👥' };
@@ -364,12 +399,12 @@
         // ═══════════════════════════════════════════════════════════════════════
         let gristReady = false;
         let tasks = [], team = [], projects = [];
-        let currentView = 'month';
+        let currentView = localStorage.getItem('taskflow_gantt_view') || 'month';
         let viewStartDate = new Date();
         let selectedTaskId = null;
         let sortMode = 'priority';
         let sortableInstance = null;
-        let filters = { project: null, assignee: null };
+        let filters = { project: [], assignee: [], priority: [] };  // GEN-02: Arrays pour compatibilité inter-widgets
         let dragState = { active: false, type: null, taskId: null, startX: 0, originalLeft: 0, originalWidth: 0, originalStart: null, originalEnd: null };
         let panelState = { open: false, isNew: false, taskId: null, taskIndex: -1, taskList: [], editData: null };
         let saveTimeout = null;
@@ -391,6 +426,44 @@
         const isJalon = (t) => t?.type === 'jalon' || (gristToDate(t?.dateDebut)?.toDateString() === gristToDate(t?.dateEcheance)?.toDateString());
 
         function showToast(msg, type = 'info') { const c = document.getElementById('toastContainer'); const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg; c.appendChild(t); setTimeout(() => t.remove(), 3000); }
+        
+        // GEN-03: Export functions
+        function exportPrint() {
+            document.querySelectorAll('.filter-menu').forEach(m => m.classList.remove('open'));
+            setTimeout(() => window.print(), 100);
+        }
+        
+        async function exportPNG() {
+            document.querySelectorAll('.filter-menu').forEach(m => m.classList.remove('open'));
+            showToast('Préparation export...', 'info');
+            
+            // Load html2canvas dynamically
+            if (!window.html2canvas) {
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+                document.head.appendChild(script);
+                await new Promise(resolve => script.onload = resolve);
+            }
+            
+            try {
+                const element = document.getElementById('ganttWrapper');
+                const canvas = await html2canvas(element, { 
+                    backgroundColor: '#ffffff',
+                    scale: 2,
+                    logging: false,
+                    useCORS: true
+                });
+                
+                const link = document.createElement('a');
+                link.download = 'gantt-' + new Date().toISOString().split('T')[0] + '.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                showToast('Export PNG réussi', 'success');
+            } catch (e) {
+                console.error('Export error:', e);
+                showToast('Erreur export PNG', 'error');
+            }
+        }
         function showSaveIndicator() { const el = document.getElementById('saveIndicator'); el.classList.add('visible'); clearTimeout(saveTimeout); saveTimeout = setTimeout(() => el.classList.remove('visible'), 1500); }
 
         // RefList/ChoiceList helpers
@@ -419,6 +492,53 @@
         }
         function getAvailableDependencies(taskId) { return tasks.filter(t => t.id !== taskId && !wouldCreateCycle(taskId, t.id)); }
         function getBlockedTasks(taskId) { return tasks.filter(t => getDependsOnArray(t).includes(taskId)); }
+        
+        // GANTT-06: Propagation des dates aux tâches dépendantes
+        function propagateDependencyDates(changedTaskId, visited = new Set()) {
+            if (visited.has(changedTaskId)) return []; // Protection contre les cycles
+            visited.add(changedTaskId);
+            
+            const changedTask = tasks.find(t => t.id === changedTaskId);
+            if (!changedTask) return [];
+            
+            const changedEnd = gristToDate(changedTask.dateEcheance);
+            if (!changedEnd) return [];
+            
+            const updates = [];
+            const blockedTasks = getBlockedTasks(changedTaskId);
+            
+            blockedTasks.forEach(depTask => {
+                const depStart = gristToDate(depTask.dateDebut);
+                const depEnd = gristToDate(depTask.dateEcheance);
+                
+                if (!depStart || !depEnd) return;
+                
+                // Si la tâche dépendante commence avant la fin de la tâche modifiée, la décaler
+                const requiredStart = addDays(changedEnd, 1); // Commence le jour suivant
+                
+                if (depStart < requiredStart) {
+                    const duration = getDaysDiff(depStart, depEnd);
+                    const newStart = requiredStart;
+                    const newEnd = addDays(newStart, duration);
+                    
+                    // Mettre à jour en mémoire
+                    depTask.dateDebut = dateToGrist(newStart);
+                    depTask.dateEcheance = dateToGrist(newEnd);
+                    
+                    updates.push({
+                        id: depTask.id,
+                        dateDebut: depTask.dateDebut,
+                        dateEcheance: depTask.dateEcheance
+                    });
+                    
+                    // Propager récursivement
+                    const cascadeUpdates = propagateDependencyDates(depTask.id, visited);
+                    updates.push(...cascadeUpdates);
+                }
+            });
+            
+            return updates;
+        }
 
         // ═══════════════════════════════════════════════════════════════════════
         // DATE CALCULATIONS
@@ -435,14 +555,27 @@
                 default: return getStartOfMonth(viewStartDate);
             }
         }
-        function getTotalDays() { const cfg = VIEW_CONFIG[currentView]; if (cfg.unit === 'day') return cfg.days; if (cfg.unit === 'week') return cfg.weeks * 7; return cfg.days; }
-        function getPixelsPerDay() { const cfg = VIEW_CONFIG[currentView]; if (cfg.unit === 'day') return cfg.cellWidth; if (cfg.unit === 'week') return cfg.cellWidth / 7; return cfg.cellWidth; }
+        function getTotalDays() { 
+            const cfg = VIEW_CONFIG[currentView]; 
+            if (cfg.unit === 'day') return cfg.days; 
+            if (cfg.unit === 'week') return cfg.weeks * 7; 
+            if (cfg.unit === 'month') return cfg.months * 30; // Approximation pour vue année
+            return cfg.days; 
+        }
+        function getPixelsPerDay() { 
+            const cfg = VIEW_CONFIG[currentView]; 
+            if (cfg.unit === 'day') return cfg.cellWidth; 
+            if (cfg.unit === 'week') return cfg.cellWidth / 7; 
+            if (cfg.unit === 'month') return cfg.cellWidth / 30; // Approximation pour vue année
+            return cfg.cellWidth; 
+        }
 
         // ═══════════════════════════════════════════════════════════════════════
         // VIEW & NAVIGATION
         // ═══════════════════════════════════════════════════════════════════════
         function setView(view) {
             currentView = view;
+            localStorage.setItem('taskflow_gantt_view', view);
             document.querySelectorAll('.view-controls .btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
             document.documentElement.style.setProperty('--cell-width', VIEW_CONFIG[view].cellWidth + 'px');
             render();
@@ -452,6 +585,8 @@
             if (typeof cfg.navStep === 'number') viewStartDate = addDays(viewStartDate, dir * cfg.navStep);
             else if (cfg.navStep === 'month') viewStartDate = new Date(viewStartDate.getFullYear(), viewStartDate.getMonth() + dir, 1);
             else if (cfg.navStep === 'quarter') viewStartDate = new Date(viewStartDate.getFullYear(), viewStartDate.getMonth() + dir * 3, 1);
+            else if (cfg.navStep === 'semester') viewStartDate = new Date(viewStartDate.getFullYear(), viewStartDate.getMonth() + dir * 6, 1);
+            else if (cfg.navStep === 'year') viewStartDate = new Date(viewStartDate.getFullYear() + dir, 0, 1);
             render();
         }
         function goToToday() { viewStartDate = new Date(); render(); }
@@ -475,29 +610,79 @@
             else if (sortMode === 'date') tasks.sort((a, b) => (a.dateDebut || 0) - (b.dateDebut || 0));
         }
         function toggleFilterMenu(id) { const m = document.querySelector('#' + id + ' .filter-menu'); const open = m.classList.contains('open'); document.querySelectorAll('.filter-menu').forEach(x => x.classList.remove('open')); if (!open) m.classList.add('open'); }
-        function setFilter(key, val) { filters[key] = val || null; updateFilterUI(); render(); }
+        // GEN-02: Gestion des filtres avec arrays et synchronisation
+        function toggleFilter(key, val) { 
+            const arr = filters[key]; 
+            const idx = arr.indexOf(val); 
+            if (idx === -1) arr.push(val); 
+            else arr.splice(idx, 1); 
+            updateFilterUI(); 
+            broadcastFilters();
+            render(); 
+        }
+        function clearFilter(key) { filters[key] = []; updateFilterUI(); broadcastFilters(); render(); }
+        function broadcastFilters() {
+            if (gristReady && typeof grist !== 'undefined' && grist.setOption) {
+                try { grist.setOption('filters', { project: filters.project, priority: filters.priority, assignee: filters.assignee }); } 
+                catch (e) { console.log('setOption not available'); }
+            }
+        }
         function updateFilterMenus() {
-            document.getElementById('filterProjectMenu').innerHTML = '<div class="filter-option ' + (!filters.project ? 'active' : '') + '" onclick="setFilter(\'project\', null)">Tous</div>' + projects.map(p => '<div class="filter-option ' + (filters.project === p.id ? 'active' : '') + '" onclick="setFilter(\'project\', ' + p.id + ')"><span class="dot" style="background:' + (p.couleur || '#6366f1') + '"></span>' + escapeHtml(p.nom) + '</div>').join('');
-            document.getElementById('filterAssigneeMenu').innerHTML = '<div class="filter-option ' + (!filters.assignee ? 'active' : '') + '" onclick="setFilter(\'assignee\', null)">Tous</div>' + team.map(m => '<div class="filter-option ' + (filters.assignee == m.id ? 'active' : '') + '" onclick="setFilter(\'assignee\', ' + m.id + ')">' + escapeHtml(m.nom) + '</div>').join('');
+            // GEN-02: Menus avec checkboxes pour sélection multiple
+            document.getElementById('filterProjectMenu').innerHTML = projects.map(p => 
+                `<div class="filter-option" onclick="toggleFilter('project', ${p.id})">
+                    <input type="checkbox" ${filters.project.includes(p.id) ? 'checked' : ''}>
+                    <span class="dot" style="background:${p.couleur || '#6366f1'}"></span>${escapeHtml(p.nom)}
+                </div>`
+            ).join('') || '<div class="filter-option">Aucun projet</div>';
+            document.getElementById('filterAssigneeMenu').innerHTML = team.filter(m => m.actif !== false).map(m => 
+                `<div class="filter-option" onclick="toggleFilter('assignee', ${m.id})">
+                    <input type="checkbox" ${filters.assignee.includes(m.id) ? 'checked' : ''}>
+                    ${escapeHtml(m.nom)}
+                </div>`
+            ).join('') || '<div class="filter-option">Aucun membre</div>';
             updateFilterUI();
         }
         function updateFilterUI() {
             const projBtn = document.querySelector('#filterProject .filter-btn');
             const assBtn = document.querySelector('#filterAssignee .filter-btn');
-            projBtn.className = 'filter-btn' + (filters.project ? ' active' : '');
-            assBtn.className = 'filter-btn' + (filters.assignee ? ' active' : '');
-            const projName = filters.project ? getProjectName(filters.project) : null;
-            document.getElementById('filterProjectLabel').textContent = projName || 'Projet ▾';
-            const mem = team.find(m => m.id == filters.assignee);
-            document.getElementById('filterAssigneeLabel').textContent = mem ? mem.nom : 'Assigné ▾';
+            projBtn.className = 'filter-btn' + (filters.project.length ? ' active' : '');
+            assBtn.className = 'filter-btn' + (filters.assignee.length ? ' active' : '');
+            
+            // Labels des boutons
+            if (filters.project.length === 1) {
+                document.getElementById('filterProjectLabel').textContent = getProjectName(filters.project[0]) + ' ▾';
+            } else if (filters.project.length > 1) {
+                document.getElementById('filterProjectLabel').textContent = filters.project.length + ' projets ▾';
+            } else {
+                document.getElementById('filterProjectLabel').textContent = 'Projet ▾';
+            }
+            
+            if (filters.assignee.length === 1) {
+                const mem = team.find(m => m.id === filters.assignee[0]);
+                document.getElementById('filterAssigneeLabel').textContent = (mem?.nom || 'Assigné') + ' ▾';
+            } else if (filters.assignee.length > 1) {
+                document.getElementById('filterAssigneeLabel').textContent = filters.assignee.length + ' personnes ▾';
+            } else {
+                document.getElementById('filterAssigneeLabel').textContent = 'Assigné ▾';
+            }
+            
+            // Chips actifs
             const chips = [];
-            if (projName) chips.push('<span class="filter-chip">' + escapeHtml(projName) + '<button onclick="setFilter(\'project\',null)">×</button></span>');
-            if (mem) chips.push('<span class="filter-chip">' + escapeHtml(mem.nom) + '<button onclick="setFilter(\'assignee\',null)">×</button></span>');
+            filters.project.forEach(id => {
+                const name = getProjectName(id);
+                if (name) chips.push(`<span class="filter-chip">${escapeHtml(name)}<button onclick="toggleFilter('project',${id})">×</button></span>`);
+            });
+            filters.assignee.forEach(id => {
+                const mem = team.find(m => m.id === id);
+                if (mem) chips.push(`<span class="filter-chip">${escapeHtml(mem.nom)}<button onclick="toggleFilter('assignee',${id})">×</button></span>`);
+            });
             document.getElementById('activeFilters').innerHTML = chips.join('');
         }
         function taskMatchesFilters(t) {
-            if (filters.project && t.projet !== filters.project) return false;
-            if (filters.assignee && !getAssigneesArray(t).includes(Number(filters.assignee))) return false;
+            if (filters.project.length && !filters.project.includes(t.projet)) return false;
+            if (filters.assignee.length && !getAssigneesArray(t).some(a => filters.assignee.includes(a))) return false;
+            if (filters.priority.length && !filters.priority.includes(getTaskPriority(t))) return false;
             return true;
         }
         function getFilteredTasks() { return tasks.filter(taskMatchesFilters); }
@@ -518,26 +703,51 @@
             const totalDays = getTotalDays();
             const cfg = VIEW_CONFIG[currentView];
             let monthsHtml = '', daysHtml = '';
-            let currentMonth = -1, monthStart = 0;
-
-            for (let i = 0; i < totalDays; i++) {
-                const d = addDays(start, i);
-                const m = d.getMonth();
-                if (m !== currentMonth) {
-                    if (currentMonth !== -1) {
-                        const width = (i - monthStart) * cfg.cellWidth;
-                        monthsHtml += '<div class="month-cell" style="width:' + width + 'px">' + MONTHS_SHORT[currentMonth] + '</div>';
-                    }
-                    currentMonth = m;
-                    monthStart = i;
+            
+            // Vue Année : afficher les mois comme colonnes principales
+            if (cfg.unit === 'month') {
+                const startMonth = start.getMonth();
+                const startYear = start.getFullYear();
+                for (let i = 0; i < cfg.months; i++) {
+                    const m = (startMonth + i) % 12;
+                    const y = startYear + Math.floor((startMonth + i) / 12);
+                    const isCurrentMonth = (new Date().getMonth() === m && new Date().getFullYear() === y);
+                    monthsHtml += '<div class="month-cell" style="width:' + cfg.cellWidth + 'px">' + (m === 0 ? y : '') + '</div>';
+                    daysHtml += '<div class="day-cell ' + (isCurrentMonth ? 'today' : '') + '" style="width:' + cfg.cellWidth + 'px">' + MONTHS_SHORT[m] + '</div>';
                 }
-                const isWe = isWeekend(d);
-                const isT = isSameDay(d, new Date());
-                const isMonthStart = d.getDate() === 1;
-                daysHtml += '<div class="day-cell ' + (isWe ? 'weekend ' : '') + (isT ? 'today ' : '') + (isMonthStart ? 'month-start' : '') + '">' + d.getDate() + '</div>';
+            } else {
+                // Vues jour/semaine : afficher les jours
+                let currentMonth = -1, monthStart = 0;
+                const pxPerDay = cfg.unit === 'day' ? cfg.cellWidth : cfg.cellWidth / 7;
+
+                for (let i = 0; i < totalDays; i++) {
+                    const d = addDays(start, i);
+                    const m = d.getMonth();
+                    if (m !== currentMonth) {
+                        if (currentMonth !== -1) {
+                            const width = (i - monthStart) * pxPerDay;
+                            monthsHtml += '<div class="month-cell" style="width:' + width + 'px">' + MONTHS_SHORT[currentMonth] + '</div>';
+                        }
+                        currentMonth = m;
+                        monthStart = i;
+                    }
+                    const isWe = isWeekend(d);
+                    const isT = isSameDay(d, new Date());
+                    const isMonthStart = d.getDate() === 1;
+                    
+                    // Pour les vues semaine (trim/sem/6M), afficher numéro semaine le lundi
+                    if (cfg.unit === 'week') {
+                        if (d.getDay() === 1) { // Lundi
+                            daysHtml += '<div class="day-cell" style="width:' + cfg.cellWidth + 'px">S' + getWeekNumber(d) + '</div>';
+                        }
+                    } else {
+                        // Vue jour normale
+                        daysHtml += '<div class="day-cell ' + (isWe ? 'weekend ' : '') + (isT ? 'today ' : '') + (isMonthStart ? 'month-start' : '') + '">' + d.getDate() + '</div>';
+                    }
+                }
+                const finalWidth = (totalDays - monthStart) * pxPerDay;
+                monthsHtml += '<div class="month-cell" style="width:' + finalWidth + 'px">' + MONTHS_SHORT[currentMonth] + '</div>';
             }
-            const finalWidth = (totalDays - monthStart) * cfg.cellWidth;
-            monthsHtml += '<div class="month-cell" style="width:' + finalWidth + 'px">' + MONTHS_SHORT[currentMonth] + '</div>';
 
             document.getElementById('monthsHeader').innerHTML = monthsHtml;
             document.getElementById('daysHeader').innerHTML = daysHtml;
@@ -594,17 +804,35 @@
             const totalDays = getTotalDays();
             const cfg = VIEW_CONFIG[currentView];
             const pxPerDay = getPixelsPerDay();
-            const totalWidth = totalDays * cfg.cellWidth;
+            const totalWidth = cfg.unit === 'month' ? cfg.months * cfg.cellWidth : totalDays * cfg.cellWidth;
 
             let gridHtml = '';
             ft.forEach(() => {
                 gridHtml += '<div class="grid-row">';
-                for (let i = 0; i < totalDays; i++) {
-                    const d = addDays(start, i);
-                    const isWe = isWeekend(d);
-                    const isT = isSameDay(d, new Date());
-                    const isMonthStart = d.getDate() === 1;
-                    gridHtml += '<div class="grid-cell ' + (isWe ? 'weekend ' : '') + (isT ? 'today ' : '') + (isMonthStart ? 'month-start' : '') + '"></div>';
+                if (cfg.unit === 'month') {
+                    // Vue année : une cellule par mois
+                    for (let i = 0; i < cfg.months; i++) {
+                        const m = (start.getMonth() + i) % 12;
+                        const y = start.getFullYear() + Math.floor((start.getMonth() + i) / 12);
+                        const isCurrentMonth = (new Date().getMonth() === m && new Date().getFullYear() === y);
+                        gridHtml += '<div class="grid-cell ' + (isCurrentMonth ? 'today' : '') + '" style="width:' + cfg.cellWidth + 'px"></div>';
+                    }
+                } else if (cfg.unit === 'week') {
+                    // Vues semaine : une cellule par semaine
+                    for (let i = 0; i < totalDays; i += 7) {
+                        const d = addDays(start, i);
+                        const isT = isSameDay(d, new Date()) || (new Date() >= d && new Date() < addDays(d, 7));
+                        gridHtml += '<div class="grid-cell ' + (isT ? 'today' : '') + '" style="width:' + cfg.cellWidth + 'px"></div>';
+                    }
+                } else {
+                    // Vue jour : une cellule par jour
+                    for (let i = 0; i < totalDays; i++) {
+                        const d = addDays(start, i);
+                        const isWe = isWeekend(d);
+                        const isT = isSameDay(d, new Date());
+                        const isMonthStart = d.getDate() === 1;
+                        gridHtml += '<div class="grid-cell ' + (isWe ? 'weekend ' : '') + (isT ? 'today ' : '') + (isMonthStart ? 'month-start' : '') + '"></div>';
+                    }
                 }
                 gridHtml += '</div>';
             });
@@ -638,28 +866,42 @@
                 const left = startOffset * pxPerDay;
                 const width = duration * pxPerDay;
                 const selected = t.id === selectedTaskId;
+                
+                // BUG-02 FIX: Clipper les barres qui débordent de la grille
+                const maxRight = totalWidth;
+                const clippedLeft = Math.max(0, left);
+                const clippedWidth = Math.min(width - (clippedLeft - left), maxRight - clippedLeft);
+                
+                // Skip si complètement hors vue (à gauche ou à droite)
+                if (clippedLeft + clippedWidth <= 0 || clippedLeft >= maxRight) return;
 
                 if (jalon) {
                     const m = document.createElement('div');
                     m.className = 'gantt-milestone p' + p + (selected ? ' selected' : '');
                     m.dataset.id = t.id;
-                    m.style.left = (left + pxPerDay / 2 - 7) + 'px';
+                    m.style.left = (Math.max(0, left + pxPerDay / 2 - 7)) + 'px';
                     m.style.top = top + 'px';
+                    // Cacher le jalon si hors vue
+                    if (left < -pxPerDay || left > maxRight) return;
                     m.innerHTML = '<div class="milestone-diamond"></div><span class="milestone-label">' + escapeHtml(t.titre) + '</span>';
                     m.onclick = () => openTaskPanel(t.id);
                     setupTooltip(m, t);
                     grid.appendChild(m);
                 } else {
                     const bar = document.createElement('div');
-                    bar.className = 'gantt-bar p' + p + (selected ? ' selected' : '');
+                    const barWidth = Math.max(clippedWidth, 20);
+                    const isNarrow = barWidth < 60;  // GANTT-04: Seuil pour label externe
+                    bar.className = 'gantt-bar p' + p + (selected ? ' selected' : '') + (isNarrow ? ' narrow-bar' : '');
                     bar.dataset.id = t.id;
-                    bar.style.left = left + 'px';
+                    bar.style.left = clippedLeft + 'px';
                     bar.style.top = top + 'px';
-                    bar.style.width = Math.max(width, 20) + 'px';
+                    bar.style.width = barWidth + 'px';
+                    // GANTT-04: Label interne + externe (CSS contrôle l'affichage)
                     bar.innerHTML = '<div class="gantt-bar-progress" style="width:' + (t.progression || 0) + '%"></div>' +
                         '<div class="resize-handle left" onmousedown="startDrag(event, this.parentElement, \'resize-left\')"></div>' +
-                        '<span style="position:relative;z-index:1;">' + escapeHtml(t.titre) + '</span>' +
-                        '<div class="resize-handle right" onmousedown="startDrag(event, this.parentElement, \'resize-right\')"></div>';
+                        '<span class="gantt-bar-label" style="position:relative;z-index:1;">' + escapeHtml(t.titre) + '</span>' +
+                        '<div class="resize-handle right" onmousedown="startDrag(event, this.parentElement, \'resize-right\')"></div>' +
+                        '<span class="gantt-bar-external-label">' + escapeHtml(t.titre) + '</span>';
                     bar.onclick = (e) => { if (!e.target.classList.contains('resize-handle')) openTaskPanel(t.id); };
                     bar.onmousedown = (e) => { if (!e.target.classList.contains('resize-handle')) startDrag(e, bar, 'move'); };
                     setupTooltip(bar, t);
@@ -724,15 +966,12 @@
         function setupTooltip(el, task) {
             const tooltip = document.getElementById('tooltip');
             el.addEventListener('mouseenter', () => {
-                const start = gristToDate(task.dateDebut);
-                const end = gristToDate(task.dateEcheance);
-                const p = getTaskPriority(task);
-                const projName = task.projet ? getProjectName(task.projet) : '';
-                tooltip.innerHTML = '<div class="tooltip-title">' + escapeHtml(task.titre) + '</div>' +
-                    '<div class="tooltip-row"><span>Priorité</span><span>' + PRIORITY_LABELS[p] + '</span></div>' +
-                    '<div class="tooltip-row"><span>Dates</span><span>' + formatDateShort(start) + ' → ' + formatDateShort(end) + '</span></div>' +
-                    (projName ? '<div class="tooltip-row"><span>Projet</span><span>' + escapeHtml(projName) + '</span></div>' : '') +
-                    '<div class="tooltip-row"><span>Progression</span><span>' + (task.progression || 0) + '%</span></div>';
+                let html = '<div class="tooltip-title">' + escapeHtml(task.titre) + '</div>';
+                TOOLTIP_FIELDS.forEach(field => {
+                    const value = field.format(task);
+                    if (value) html += '<div class="tooltip-row"><span>' + field.label + '</span><span>' + escapeHtml(String(value)) + '</span></div>';
+                });
+                tooltip.innerHTML = html;
                 tooltip.classList.add('visible');
             });
             el.addEventListener('mousemove', (e) => { tooltip.style.left = (e.clientX + 15) + 'px'; tooltip.style.top = (e.clientY + 15) + 'px'; });
@@ -806,6 +1045,28 @@
                 assignees: getAssigneesArray(task), dependDe: getDependsOnArray(task), tags: getTagsArray(task),
                 estimationH: task.estimationH || null, tempsPasse: task.tempsPasse || null
             };
+        }
+
+        // FIX: Synchroniser editData vers le task local dans tasks[]
+        function syncLocalTask() {
+            if (panelState.isNew || !panelState.taskId) return;
+            const task = tasks.find(t => t.id === panelState.taskId);
+            const data = panelState.editData;
+            if (!task || !data) return;
+            task.titre = data.titre;
+            task.description = data.description;
+            task.type = data.type;
+            task.priorite = data.priorite;
+            task.statut = data.statut;
+            task.progression = data.progression;
+            task.dateDebut = data.dateDebut;
+            task.dateEcheance = data.dateEcheance;
+            task.projet = data.projet;
+            task.assignees = ['L', ...data.assignees];
+            task.dependDe = ['L', ...data.dependDe];
+            task.tags = ['L', ...data.tags];
+            task.estimationH = data.estimationH;
+            task.tempsPasse = data.tempsPasse;
         }
 
         function navigatePanelTask(dir) {
@@ -940,7 +1201,10 @@
                 data.dateEcheance = data.dateDebut;
             }
 
-            const visualFields = ['type', 'priorite', 'statut', 'projet'];
+            // FIX: Synchroniser le task local pour affichage immédiat
+            syncLocalTask();
+
+            const visualFields = ['type', 'priorite', 'statut', 'projet', 'progression', 'dateDebut', 'dateEcheance'];
             if (visualFields.includes(field)) {
                 renderPanel();
                 if (!panelState.isNew) render();
@@ -965,8 +1229,10 @@
             const idx = data.assignees.indexOf(id);
             if (idx === -1) data.assignees.push(id);
             else data.assignees.splice(idx, 1);
+            syncLocalTask();  // FIX
             if (!panelState.isNew && gristReady) saveTaskToGrist();
             renderPanel();
+            render();
         }
 
         function removeAssignee(id) {
@@ -974,8 +1240,10 @@
             const idx = data.assignees.indexOf(id);
             if (idx !== -1) {
                 data.assignees.splice(idx, 1);
+                syncLocalTask();  // FIX
                 if (!panelState.isNew && gristReady) saveTaskToGrist();
                 renderPanel();
+                render();
             }
         }
 
@@ -984,6 +1252,7 @@
             const idx = data.dependDe.indexOf(id);
             if (idx === -1) data.dependDe.push(id);
             else data.dependDe.splice(idx, 1);
+            syncLocalTask();  // FIX
             if (!panelState.isNew && gristReady) saveTaskToGrist();
             renderPanel();
             render();
@@ -994,6 +1263,7 @@
             const idx = data.dependDe.indexOf(id);
             if (idx !== -1) {
                 data.dependDe.splice(idx, 1);
+                syncLocalTask();  // FIX
                 if (!panelState.isNew && gristReady) saveTaskToGrist();
                 renderPanel();
                 render();
@@ -1008,11 +1278,13 @@
                 if (tag && !data.tags.includes(tag)) {
                     data.tags.push(tag);
                     e.target.value = '';
+                    syncLocalTask();  // FIX
                     if (!panelState.isNew && gristReady) saveTaskToGrist();
                     renderPanel();
                 }
             } else if (e.key === 'Backspace' && !e.target.value && data.tags.length) {
                 data.tags.pop();
+                syncLocalTask();  // FIX
                 if (!panelState.isNew && gristReady) saveTaskToGrist();
                 renderPanel();
             }
@@ -1023,6 +1295,7 @@
             const idx = data.tags.indexOf(tag);
             if (idx !== -1) {
                 data.tags.splice(idx, 1);
+                syncLocalTask();  // FIX
                 if (!panelState.isNew && gristReady) saveTaskToGrist();
                 renderPanel();
             }
@@ -1184,10 +1457,23 @@
             task.dateDebut = dateToGrist(newStart);
             task.dateEcheance = dateToGrist(newEnd);
 
+            // GANTT-06: Propager les changements aux tâches dépendantes
+            const cascadeUpdates = propagateDependencyDates(task.id);
+            
             if (gristReady) {
                 try {
-                    await grist.docApi.applyUserActions([['UpdateRecord', 'Tasks', task.id, { dateDebut: task.dateDebut, dateEcheance: task.dateEcheance }]]);
-                    showToast('Dates mises à jour', 'success');
+                    // Batch update: tâche principale + cascade
+                    const actions = [['UpdateRecord', 'Tasks', task.id, { dateDebut: task.dateDebut, dateEcheance: task.dateEcheance }]];
+                    cascadeUpdates.forEach(u => {
+                        actions.push(['UpdateRecord', 'Tasks', u.id, { dateDebut: u.dateDebut, dateEcheance: u.dateEcheance }]);
+                    });
+                    await grist.docApi.applyUserActions(actions);
+                    
+                    if (cascadeUpdates.length > 0) {
+                        showToast(`Dates mises à jour (+${cascadeUpdates.length} dépendances)`, 'success');
+                    } else {
+                        showToast('Dates mises à jour', 'success');
+                    }
                 } catch (err) { showToast('Erreur de mise à jour', 'error'); }
             }
 
@@ -1209,7 +1495,7 @@
         }
 
         const TASKFLOW_SCHEMA = {
-            Team: [{ id: 'nom', type: 'Text' }, { id: 'email', type: 'Text' }, { id: 'avatar', type: 'Text' }, { id: 'role', type: 'Choice' }, { id: 'actif', type: 'Bool' }],
+            Team: [{ id: 'nom', type: 'Text' }, { id: 'email', type: 'Text' }, { id: 'avatar', type: 'Text' }, { id: 'role', type: 'Choice' }, { id: 'actif', type: 'Bool' }, { id: 'couleur', type: 'Text' }],  // TEAM-01
             Projects: [{ id: 'nom', type: 'Text' }, { id: 'couleur', type: 'Text' }, { id: 'dateDebut', type: 'Date' }, { id: 'dateFin', type: 'Date' }, { id: 'responsable', type: 'Ref:Team' }, { id: 'actif', type: 'Bool' }],
             Tasks: [{ id: 'titre', type: 'Text' }, { id: 'description', type: 'Text' }, { id: 'dateDebut', type: 'Date' }, { id: 'dateEcheance', type: 'Date' }, { id: 'priorite', type: 'Choice' }, { id: 'statut', type: 'Choice' }, { id: 'progression', type: 'Numeric' }, { id: 'projet', type: 'Ref:Projects' }, { id: 'assignees', type: 'RefList:Team' }, { id: 'type', type: 'Choice' }, { id: 'dependDe', type: 'RefList:Tasks' }, { id: 'tags', type: 'ChoiceList' }, { id: 'estimationH', type: 'Numeric' }, { id: 'tempsPasse', type: 'Numeric' }, { id: 'couleur', type: 'Text' }]
         };
@@ -1275,6 +1561,17 @@
                         render();
                     }
                 });
+                // GEN-02: Synchronisation des filtres inter-widgets
+                grist.onOptions((options, interaction) => {
+                    if (options?.filters && interaction?.source !== 'self') {
+                        const f = options.filters;
+                        filters.project = Array.isArray(f.project) ? f.project : [];
+                        filters.priority = Array.isArray(f.priority) ? f.priority : [];
+                        filters.assignee = Array.isArray(f.assignee) ? f.assignee : [];
+                        updateFilterMenus();
+                        render();
+                    }
+                });
             } catch (e) {
                 console.log('Grist unavailable, using demo');
                 useDemoMode();
@@ -1285,9 +1582,9 @@
             document.body.insertAdjacentHTML('beforeend', '<div class="demo-badge">Démo</div>');
 
             team = [
-                { id: 1, nom: 'Alice Martin', actif: true },
-                { id: 2, nom: 'Bob Durant', actif: true },
-                { id: 3, nom: 'Claire Bernard', actif: true }
+                { id: 1, nom: 'Alice Martin', actif: true, couleur: '#4f46e5' },
+                { id: 2, nom: 'Bob Durant', actif: true, couleur: '#10b981' },
+                { id: 3, nom: 'Claire Bernard', actif: true, couleur: '#f59e0b' }
             ];
             projects = [
                 { id: 1, nom: 'Refonte Portail', couleur: '#4f46e5', actif: true },
@@ -1317,11 +1614,19 @@
         // EVENT LISTENERS
         // ═══════════════════════════════════════════════════════════════════════
         document.addEventListener('click', (e) => {
+            // Fermer les menus dropdown
             if (!e.target.closest('.filter-dropdown')) {
                 document.querySelectorAll('.filter-menu').forEach(m => m.classList.remove('open'));
             }
             if (!e.target.closest('.multi-select')) {
                 document.querySelectorAll('.multi-select').forEach(s => s.classList.remove('open'));
+            }
+            // GEN-01: Désélection si clic en dehors d'une barre, du panel ou des contrôles
+            if (!e.target.closest('.gantt-bar, .gantt-milestone, .panel, .task-row, .toolbar, .filter-dropdown, .view-controls')) {
+                if (selectedTaskId !== null && !panelState.open) {
+                    selectedTaskId = null;
+                    render();
+                }
             }
         });
 
@@ -1337,6 +1642,8 @@
         // INIT
         // ═══════════════════════════════════════════════════════════════════════
         document.documentElement.style.setProperty('--cell-width', VIEW_CONFIG[currentView].cellWidth + 'px');
+        // Initialiser le bouton vue actif depuis localStorage
+        document.querySelectorAll('.view-controls .btn').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
         initGrist();
     </script>
 </body>

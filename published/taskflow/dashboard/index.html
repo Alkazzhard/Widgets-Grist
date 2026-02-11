@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - TaskFlow v2</title>
+    <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+    <style>
+        :root {
+            --bg: #f8fafc; --card-bg: #ffffff; --text: #1e293b; --text-muted: #64748b;
+            --border: #e2e8f0; --primary: #4f46e5; --primary-light: #eef2ff;
+            --success: #10b981; --success-light: #d1fae5;
+            --warning: #f59e0b; --warning-light: #fef3c7;
+            --danger: #ef4444; --danger-light: #fee2e2;
+            --info: #3b82f6; --info-light: #dbeafe;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+        
+        /* Layout */
+        .dashboard { display: flex; flex-direction: column; height: 100vh; }
+        .header { padding: 12px 20px; background: var(--card-bg); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+        .header h1 { font-size: 1.1rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .header h1::before { content: '📊'; }
+        .header-right { display: flex; align-items: center; gap: 12px; }
+        .last-update { font-size: 0.75rem; color: var(--text-muted); }
+        .btn { padding: 6px 12px; border: 1px solid var(--border); background: var(--card-bg); border-radius: 6px; font-size: 0.8rem; cursor: pointer; transition: all 0.15s; }
+        .btn:hover { background: var(--bg); }
+        .btn.primary { background: var(--primary); color: white; border-color: var(--primary); }
+        .btn.primary:hover { opacity: 0.9; }
+        
+        .main { flex: 1; overflow: auto; padding: 16px; }
+        
+        /* Grid */
+        .grid { display: grid; gap: 16px; grid-template-columns: repeat(4, 1fr); grid-template-rows: auto auto 1fr; }
+        @media (max-width: 1200px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+        
+        /* Cards */
+        .card { background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border); padding: 16px; }
+        .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .card-title { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
+        .card-icon { font-size: 1.2rem; }
+        
+        /* KPI Cards */
+        .kpi-card { display: flex; flex-direction: column; }
+        .kpi-value { font-size: 2rem; font-weight: 700; line-height: 1.2; }
+        .kpi-label { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+        .kpi-trend { font-size: 0.75rem; margin-top: 8px; padding: 4px 8px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; width: fit-content; }
+        .kpi-trend.up { background: var(--success-light); color: var(--success); }
+        .kpi-trend.down { background: var(--danger-light); color: var(--danger); }
+        .kpi-trend.neutral { background: var(--bg); color: var(--text-muted); }
+        
+        .kpi-card.total .kpi-value { color: var(--primary); }
+        .kpi-card.progress .kpi-value { color: var(--info); }
+        .kpi-card.done .kpi-value { color: var(--success); }
+        .kpi-card.late .kpi-value { color: var(--danger); }
+        
+        /* Charts */
+        .chart-card { grid-column: span 2; }
+        .chart-container { height: 200px; display: flex; align-items: center; justify-content: center; }
+        
+        /* Donut Chart */
+        .donut-chart { position: relative; width: 160px; height: 160px; }
+        .donut-chart svg { transform: rotate(-90deg); }
+        .donut-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
+        .donut-center-value { font-size: 1.5rem; font-weight: 700; }
+        .donut-center-label { font-size: 0.7rem; color: var(--text-muted); }
+        .donut-legend { display: flex; flex-direction: column; gap: 8px; margin-left: 24px; }
+        .legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; }
+        .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .legend-value { margin-left: auto; font-weight: 600; }
+        
+        /* Bar Chart */
+        .bar-chart { width: 100%; display: flex; flex-direction: column; gap: 12px; }
+        .bar-row { display: flex; align-items: center; gap: 12px; }
+        .bar-label { width: 80px; font-size: 0.8rem; text-align: right; }
+        .bar-track { flex: 1; height: 24px; background: var(--bg); border-radius: 6px; overflow: hidden; position: relative; }
+        .bar-fill { height: 100%; border-radius: 6px; transition: width 0.5s ease; display: flex; align-items: center; justify-content: flex-end; padding-right: 8px; }
+        .bar-fill span { font-size: 0.7rem; font-weight: 600; color: white; }
+        .bar-fill.p1 { background: #ef4444; }
+        .bar-fill.p2 { background: #f59e0b; }
+        .bar-fill.p3 { background: #3b82f6; }
+        .bar-fill.p4 { background: #64748b; }
+        
+        /* Team Workload */
+        .workload-card { grid-column: span 2; }
+        .workload-list { display: flex; flex-direction: column; gap: 10px; max-height: 200px; overflow-y: auto; }
+        .workload-item { display: flex; align-items: center; gap: 12px; }
+        .workload-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--primary-light); color: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.8rem; }
+        .workload-info { flex: 1; }
+        .workload-name { font-size: 0.85rem; font-weight: 500; }
+        .workload-tasks { font-size: 0.75rem; color: var(--text-muted); }
+        .workload-bar { width: 120px; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+        .workload-bar-fill { height: 100%; background: var(--primary); border-radius: 4px; }
+        .workload-bar-fill.high { background: var(--danger); }
+        .workload-bar-fill.medium { background: var(--warning); }
+        
+        /* Upcoming */
+        .upcoming-card { grid-column: span 2; }
+        .upcoming-list { display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto; }
+        .upcoming-item { display: flex; align-items: center; gap: 12px; padding: 10px; background: var(--bg); border-radius: 8px; cursor: pointer; transition: all 0.15s; }
+        .upcoming-item:hover { background: var(--primary-light); }
+        .upcoming-date { min-width: 50px; text-align: center; padding: 6px 8px; border-radius: 6px; background: var(--card-bg); border: 1px solid var(--border); }
+        .upcoming-date-day { font-size: 1.1rem; font-weight: 700; }
+        .upcoming-date-month { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; }
+        .upcoming-date.late { background: var(--danger-light); border-color: var(--danger); }
+        .upcoming-date.late .upcoming-date-day { color: var(--danger); }
+        .upcoming-date.today { background: var(--primary-light); border-color: var(--primary); }
+        .upcoming-date.today .upcoming-date-day { color: var(--primary); }
+        .upcoming-info { flex: 1; min-width: 0; }
+        .upcoming-title { font-size: 0.85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .upcoming-meta { font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 12px; }
+        .upcoming-priority { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; align-self: center; }
+        .upcoming-priority.p1 { background: #ef4444; }
+        .upcoming-priority.p2 { background: #f59e0b; }
+        .upcoming-priority.p3 { background: #3b82f6; }
+        .upcoming-priority.p4 { background: #64748b; }
+        
+        /* Projects */
+        .projects-card { grid-column: span 2; }
+        .projects-list { display: flex; flex-direction: column; gap: 12px; max-height: 200px; overflow-y: auto; }
+        .project-item { display: flex; align-items: center; gap: 12px; }
+        .project-color { width: 4px; height: 40px; border-radius: 2px; }
+        .project-info { flex: 1; }
+        .project-name { font-size: 0.85rem; font-weight: 500; }
+        .project-stats { font-size: 0.75rem; color: var(--text-muted); }
+        .project-progress { width: 100px; }
+        .project-progress-bar { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; }
+        .project-progress-fill { height: 100%; background: var(--success); border-radius: 3px; }
+        .project-progress-text { font-size: 0.7rem; color: var(--text-muted); text-align: right; margin-top: 2px; }
+        
+        /* Demo badge */
+        .demo-badge { position: fixed; bottom: 10px; right: 10px; background: var(--warning); color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; z-index: 100; }
+        
+        /* Empty state */
+        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; color: var(--text-muted); text-align: center; }
+        .empty-state-icon { font-size: 2rem; margin-bottom: 12px; }
+        .empty-state-text { font-size: 0.9rem; }
+        
+        /* DASH-02: Export Print/PDF */
+        @media print {
+            body { background: white !important; }
+            .header, .demo-badge, .btn { display: none !important; }
+            .main { padding: 0 !important; }
+            .grid { gap: 10px; }
+            .card { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+            @page { size: landscape; margin: 1cm; }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <h1>Dashboard TaskFlow</h1>
+            <div class="header-right">
+                <span class="last-update" id="lastUpdate">Mis à jour: --</span>
+                <button class="btn" onclick="exportPrint()" title="Imprimer">🖨️</button>
+                <button class="btn" onclick="exportPNG()" title="Export PNG">📥</button>
+                <button class="btn primary" onclick="loadAllData()">↻ Actualiser</button>
+            </div>
+        </div>
+        
+        <div class="main">
+            <div class="grid" id="dashboardGrid">
+                <!-- KPIs -->
+                <div class="card kpi-card total" id="kpiTotal">
+                    <div class="card-header"><span class="card-title">Total tâches</span><span class="card-icon">📋</span></div>
+                    <div class="kpi-value">--</div>
+                    <div class="kpi-label">tâches créées</div>
+                </div>
+                <div class="card kpi-card progress" id="kpiProgress">
+                    <div class="card-header"><span class="card-title">En cours</span><span class="card-icon">🔄</span></div>
+                    <div class="kpi-value">--</div>
+                    <div class="kpi-label">tâches actives</div>
+                </div>
+                <div class="card kpi-card done" id="kpiDone">
+                    <div class="card-header"><span class="card-title">Terminées</span><span class="card-icon">✅</span></div>
+                    <div class="kpi-value">--</div>
+                    <div class="kpi-label">cette semaine</div>
+                </div>
+                <div class="card kpi-card late" id="kpiLate">
+                    <div class="card-header"><span class="card-title">En retard</span><span class="card-icon">⚠️</span></div>
+                    <div class="kpi-value">--</div>
+                    <div class="kpi-label">à traiter</div>
+                </div>
+                
+                <!-- Status Chart -->
+                <div class="card chart-card" id="statusChart">
+                    <div class="card-header"><span class="card-title">Répartition par statut</span></div>
+                    <div class="chart-container" id="statusChartContainer"></div>
+                </div>
+                
+                <!-- Priority Chart -->
+                <div class="card chart-card" id="priorityChart">
+                    <div class="card-header"><span class="card-title">Répartition par priorité</span></div>
+                    <div class="chart-container" id="priorityChartContainer"></div>
+                </div>
+                
+                <!-- Team Workload -->
+                <div class="card workload-card" id="workloadCard">
+                    <div class="card-header"><span class="card-title">Charge équipe</span></div>
+                    <div class="workload-list" id="workloadList"></div>
+                </div>
+                
+                <!-- Upcoming -->
+                <div class="card upcoming-card" id="upcomingCard">
+                    <div class="card-header"><span class="card-title">Échéances proches</span></div>
+                    <div class="upcoming-list" id="upcomingList"></div>
+                </div>
+                
+                <!-- Projects -->
+                <div class="card projects-card" id="projectsCard">
+                    <div class="card-header"><span class="card-title">Projets en cours</span></div>
+                    <div class="projects-list" id="projectsList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ═══════════════════════════════════════════════════════════════════════
+        // DATA & STATE
+        // ═══════════════════════════════════════════════════════════════════════
+        let tasks = [], projects = [], team = [];
+        let gristReady = false;
+        
+        const STATUS_LABELS = { todo: 'À faire', inprogress: 'En cours', review: 'En revue', done: 'Terminé' };
+        const STATUS_COLORS = { todo: '#64748b', inprogress: '#3b82f6', review: '#f59e0b', done: '#10b981' };
+        const PRIORITY_LABELS = { 1: 'Critique', 2: 'Haute', 3: 'Moyenne', 4: 'Basse' };
+        const PRIORITY_COLORS = { 1: '#ef4444', 2: '#f59e0b', 3: '#3b82f6', 4: '#64748b' };
+        const MONTHS_SHORT = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'];
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // UTILITIES
+        // ═══════════════════════════════════════════════════════════════════════
+        const gristToDate = (ts) => ts ? new Date(ts * 1000) : null;
+        const escapeHtml = (t) => { if (!t) return ''; const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
+        const isSameDay = (d1, d2) => d1 && d2 && d1.getDate() === d2.getDate() && d1.getMonth() === d2.getMonth() && d1.getFullYear() === d2.getFullYear();
+        const addDays = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
+        const startOfWeek = (d) => { const t = new Date(d); const day = t.getDay(); return addDays(t, -(day === 0 ? 6 : day - 1)); };
+        
+        const getPriority = (t) => parseInt(t?.priorite) || 3;
+        const getStatus = (t) => t?.statut || 'todo';
+        
+        const getAssigneesArray = (t) => {
+            if (!t?.assignees) return [];
+            if (Array.isArray(t.assignees)) {
+                if (t.assignees[0] === 'L') return t.assignees.slice(1);
+                return t.assignees;
+            }
+            return [];
+        };
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // STATS CALCULATION
+        // ═══════════════════════════════════════════════════════════════════════
+        function calculateStats() {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const weekStart = startOfWeek(today);
+            
+            const stats = {
+                total: tasks.length,
+                byStatus: { todo: 0, inprogress: 0, review: 0, done: 0 },
+                byPriority: { 1: 0, 2: 0, 3: 0, 4: 0 },
+                late: 0,
+                doneThisWeek: 0,
+                inProgress: 0,
+                byAssignee: {},
+                upcoming: [],
+                projectStats: {}
+            };
+            
+            tasks.forEach(t => {
+                const status = getStatus(t);
+                const priority = getPriority(t);
+                const endDate = gristToDate(t.dateEcheance);
+                const assignees = getAssigneesArray(t);
+                
+                // By status
+                if (stats.byStatus[status] !== undefined) stats.byStatus[status]++;
+                
+                // By priority
+                if (stats.byPriority[priority] !== undefined) stats.byPriority[priority]++;
+                
+                // In progress (not done)
+                if (status !== 'done') stats.inProgress++;
+                
+                // Late (past due, not done)
+                if (endDate && endDate < today && status !== 'done') {
+                    stats.late++;
+                }
+                
+                // Done this week
+                if (status === 'done' && endDate && endDate >= weekStart) {
+                    stats.doneThisWeek++;
+                }
+                
+                // By assignee
+                assignees.forEach(a => {
+                    if (!stats.byAssignee[a]) stats.byAssignee[a] = { total: 0, active: 0 };
+                    stats.byAssignee[a].total++;
+                    if (status !== 'done') stats.byAssignee[a].active++;
+                });
+                
+                // Upcoming (next 14 days, not done)
+                if (endDate && status !== 'done') {
+                    const daysUntil = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
+                    if (daysUntil <= 14) {
+                        stats.upcoming.push({ task: t, date: endDate, daysUntil });
+                    }
+                }
+                
+                // By project
+                if (t.projet) {
+                    if (!stats.projectStats[t.projet]) {
+                        stats.projectStats[t.projet] = { total: 0, done: 0, progression: 0 };
+                    }
+                    stats.projectStats[t.projet].total++;
+                    if (status === 'done') stats.projectStats[t.projet].done++;
+                    stats.projectStats[t.projet].progression += (t.progression || 0);
+                }
+            });
+            
+            // Sort upcoming by date
+            stats.upcoming.sort((a, b) => a.date - b.date);
+            
+            // Calculate project average progression
+            Object.keys(stats.projectStats).forEach(pid => {
+                const ps = stats.projectStats[pid];
+                ps.avgProgression = ps.total > 0 ? Math.round(ps.progression / ps.total) : 0;
+            });
+            
+            return stats;
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // DASH-02: EXPORT
+        // ═══════════════════════════════════════════════════════════════════════
+        function exportPrint() {
+            setTimeout(() => window.print(), 100);
+        }
+        
+        async function exportPNG() {
+            if (!window.html2canvas) {
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+                document.head.appendChild(script);
+                await new Promise(resolve => script.onload = resolve);
+            }
+            
+            try {
+                const element = document.getElementById('dashboardGrid');
+                const canvas = await html2canvas(element, { backgroundColor: '#f8fafc', scale: 2, logging: false });
+                const link = document.createElement('a');
+                link.download = 'dashboard-' + new Date().toISOString().split('T')[0] + '.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            } catch (e) {
+                console.error('Export error:', e);
+            }
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // RENDER
+        // ═══════════════════════════════════════════════════════════════════════
+        function render() {
+            const stats = calculateStats();
+            
+            renderKPIs(stats);
+            renderStatusChart(stats);
+            renderPriorityChart(stats);
+            renderWorkload(stats);
+            renderUpcoming(stats);
+            renderProjects(stats);
+            
+            document.getElementById('lastUpdate').textContent = 'Mis à jour: ' + new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        }
+        
+        function renderKPIs(stats) {
+            // Total
+            document.querySelector('#kpiTotal .kpi-value').textContent = stats.total;
+            
+            // In progress
+            document.querySelector('#kpiProgress .kpi-value').textContent = stats.inProgress;
+            
+            // Done this week
+            document.querySelector('#kpiDone .kpi-value').textContent = stats.doneThisWeek;
+            
+            // Late
+            document.querySelector('#kpiLate .kpi-value').textContent = stats.late;
+            const lateCard = document.getElementById('kpiLate');
+            if (stats.late > 0) {
+                lateCard.style.borderColor = '#ef4444';
+                lateCard.style.background = '#fef2f2';
+            } else {
+                lateCard.style.borderColor = '';
+                lateCard.style.background = '';
+            }
+        }
+        
+        function renderStatusChart(stats) {
+            const container = document.getElementById('statusChartContainer');
+            const total = stats.total || 1;
+            
+            // Calculate percentages
+            const data = Object.entries(stats.byStatus).map(([key, value]) => ({
+                key, value, percent: Math.round((value / total) * 100), color: STATUS_COLORS[key], label: STATUS_LABELS[key]
+            }));
+            
+            // SVG Donut
+            let offset = 0;
+            const radius = 60;
+            const circumference = 2 * Math.PI * radius;
+            
+            let paths = '';
+            data.forEach(d => {
+                if (d.value > 0) {
+                    const length = (d.percent / 100) * circumference;
+                    paths += `<circle cx="80" cy="80" r="${radius}" fill="none" stroke="${d.color}" stroke-width="20" stroke-dasharray="${length} ${circumference}" stroke-dashoffset="${-offset}" />`;
+                    offset += length;
+                }
+            });
+            
+            // Legend
+            let legend = '';
+            data.forEach(d => {
+                legend += `<div class="legend-item"><span class="legend-dot" style="background:${d.color}"></span><span>${d.label}</span><span class="legend-value">${d.value}</span></div>`;
+            });
+            
+            container.innerHTML = `
+                <div class="donut-chart">
+                    <svg width="160" height="160">${paths}</svg>
+                    <div class="donut-center">
+                        <div class="donut-center-value">${stats.total}</div>
+                        <div class="donut-center-label">tâches</div>
+                    </div>
+                </div>
+                <div class="donut-legend">${legend}</div>
+            `;
+        }
+        
+        function renderPriorityChart(stats) {
+            const container = document.getElementById('priorityChartContainer');
+            const maxValue = Math.max(...Object.values(stats.byPriority), 1);
+            
+            let html = '<div class="bar-chart">';
+            [1, 2, 3, 4].forEach(p => {
+                const value = stats.byPriority[p] || 0;
+                const percent = Math.round((value / maxValue) * 100);
+                html += `
+                    <div class="bar-row">
+                        <div class="bar-label">${PRIORITY_LABELS[p]}</div>
+                        <div class="bar-track">
+                            <div class="bar-fill p${p}" style="width:${percent}%"><span>${value}</span></div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        }
+        
+        function renderWorkload(stats) {
+            const container = document.getElementById('workloadList');
+            const maxActive = Math.max(...Object.values(stats.byAssignee).map(a => a.active), 1);
+            
+            if (team.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">👥</div><div class="empty-state-text">Aucun membre</div></div>';
+                return;
+            }
+            
+            let html = '';
+            team.filter(m => m.actif !== false).forEach(member => {
+                const data = stats.byAssignee[member.id] || { total: 0, active: 0 };
+                const percent = Math.round((data.active / maxActive) * 100);
+                const level = data.active > 5 ? 'high' : data.active > 3 ? 'medium' : '';
+                const initials = (member.nom || '?').split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+                const memberColor = member.couleur || '#4f46e5';  // TEAM-01: couleur personnalisée
+                
+                html += `
+                    <div class="workload-item">
+                        <div class="workload-avatar" style="background:${memberColor}">${initials}</div>
+                        <div class="workload-info">
+                            <div class="workload-name">${escapeHtml(member.nom)}</div>
+                            <div class="workload-tasks">${data.active} active${data.active > 1 ? 's' : ''} / ${data.total} total</div>
+                        </div>
+                        <div class="workload-bar">
+                            <div class="workload-bar-fill ${level}" style="width:${percent}%"></div>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html || '<div class="empty-state"><div class="empty-state-text">Aucune donnée</div></div>';
+        }
+        
+        function renderUpcoming(stats) {
+            const container = document.getElementById('upcomingList');
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            if (stats.upcoming.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📅</div><div class="empty-state-text">Aucune échéance proche</div></div>';
+                return;
+            }
+            
+            let html = '';
+            stats.upcoming.slice(0, 8).forEach(item => {
+                const { task, date, daysUntil } = item;
+                const priority = getPriority(task);
+                const project = projects.find(p => p.id === task.projet);
+                
+                let dateClass = '';
+                if (daysUntil < 0) dateClass = 'late';
+                else if (daysUntil === 0) dateClass = 'today';
+                
+                html += `
+                    <div class="upcoming-item" onclick="selectTask(${task.id})">
+                        <div class="upcoming-priority p${priority}"></div>
+                        <div class="upcoming-date ${dateClass}">
+                            <div class="upcoming-date-day">${date.getDate()}</div>
+                            <div class="upcoming-date-month">${MONTHS_SHORT[date.getMonth()]}</div>
+                        </div>
+                        <div class="upcoming-info">
+                            <div class="upcoming-title">${escapeHtml(task.titre)}</div>
+                            <div class="upcoming-meta">
+                                ${project ? `<span style="color:${project.couleur}">● ${escapeHtml(project.nom)}</span>` : ''}
+                                <span>${daysUntil < 0 ? Math.abs(daysUntil) + 'j de retard' : daysUntil === 0 ? "Aujourd'hui" : 'Dans ' + daysUntil + 'j'}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+        
+        function renderProjects(stats) {
+            const container = document.getElementById('projectsList');
+            
+            const activeProjects = projects.filter(p => p.actif !== false && stats.projectStats[p.id]);
+            
+            if (activeProjects.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📁</div><div class="empty-state-text">Aucun projet actif</div></div>';
+                return;
+            }
+            
+            let html = '';
+            activeProjects.forEach(project => {
+                const ps = stats.projectStats[project.id] || { total: 0, done: 0, avgProgression: 0 };
+                const completionPercent = ps.total > 0 ? Math.round((ps.done / ps.total) * 100) : 0;
+                
+                html += `
+                    <div class="project-item">
+                        <div class="project-color" style="background:${project.couleur || '#6366f1'}"></div>
+                        <div class="project-info">
+                            <div class="project-name">${escapeHtml(project.nom)}</div>
+                            <div class="project-stats">${ps.done}/${ps.total} tâches terminées</div>
+                        </div>
+                        <div class="project-progress">
+                            <div class="project-progress-bar">
+                                <div class="project-progress-fill" style="width:${completionPercent}%"></div>
+                            </div>
+                            <div class="project-progress-text">${completionPercent}%</div>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+        
+        function selectTask(taskId) {
+            if (gristReady && grist.setSelectedRows) {
+                grist.setSelectedRows([taskId]);
+            }
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // GRIST INTEGRATION
+        // ═══════════════════════════════════════════════════════════════════════
+        function convert(data) {
+            if (!data || Array.isArray(data)) return data || [];
+            const cols = Object.keys(data);
+            if (!cols.length) return [];
+            const n = data[cols[0]]?.length || 0;
+            const r = [];
+            for (let i = 0; i < n; i++) { const rec = {}; cols.forEach(c => rec[c] = data[c][i]); r.push(rec); }
+            return r;
+        }
+        
+        async function loadAllData() {
+            if (!gristReady) return;
+            try {
+                const [tasksData, projectsData, teamData] = await Promise.all([
+                    grist.docApi.fetchTable('Tasks'),
+                    grist.docApi.fetchTable('Projects'),
+                    grist.docApi.fetchTable('Team')
+                ]);
+                tasks = convert(tasksData);
+                projects = convert(projectsData);
+                team = convert(teamData);
+                render();
+            } catch (e) {
+                console.log('Error loading data:', e);
+            }
+        }
+        
+        async function init() {
+            try {
+                await grist.ready({ requiredAccess: 'full' });
+                gristReady = true;
+                await loadAllData();
+                grist.onRecords(async () => await loadAllData());
+            } catch (e) {
+                console.log('Demo mode');
+                useDemoMode();
+            }
+        }
+        
+        function useDemoMode() {
+            document.body.insertAdjacentHTML('beforeend', '<div class="demo-badge">Démo</div>');
+            
+            team = [
+                { id: 1, nom: 'Alice Martin', actif: true, couleur: '#4f46e5' },
+                { id: 2, nom: 'Bob Durant', actif: true, couleur: '#10b981' },
+                { id: 3, nom: 'Claire Bernard', actif: true, couleur: '#f59e0b' }
+            ];
+            
+            projects = [
+                { id: 1, nom: 'Refonte Portail', couleur: '#4f46e5', actif: true },
+                { id: 2, nom: 'App Mobile', couleur: '#10b981', actif: true },
+                { id: 3, nom: 'API v2', couleur: '#f59e0b', actif: true }
+            ];
+            
+            const today = new Date();
+            const day = (d) => Math.floor(new Date(today.getFullYear(), today.getMonth(), today.getDate() + d).getTime() / 1000);
+            
+            tasks = [
+                { id: 1, titre: 'Analyse besoins', priorite: '1', projet: 1, dateDebut: day(-10), dateEcheance: day(-5), progression: 100, statut: 'done', assignees: ['L', 1] },
+                { id: 2, titre: 'Dev Backend', priorite: '1', projet: 1, dateDebut: day(-4), dateEcheance: day(2), progression: 60, statut: 'inprogress', assignees: ['L', 1, 2] },
+                { id: 3, titre: 'Design UI', priorite: '2', projet: 2, dateDebut: day(-5), dateEcheance: day(1), progression: 80, statut: 'review', assignees: ['L', 3] },
+                { id: 4, titre: 'Livraison MVP', priorite: '1', projet: 1, dateDebut: day(15), dateEcheance: day(15), progression: 0, statut: 'todo', assignees: ['L', 1] },
+                { id: 5, titre: 'Tests QA', priorite: '3', projet: 2, dateDebut: day(5), dateEcheance: day(12), progression: 0, statut: 'todo', assignees: ['L', 2] },
+                { id: 6, titre: 'Documentation', priorite: '4', projet: 3, dateDebut: day(-2), dateEcheance: day(-1), progression: 20, statut: 'inprogress', assignees: ['L', 3] },
+                { id: 7, titre: 'Correction bugs', priorite: '2', projet: 1, dateDebut: day(0), dateEcheance: day(3), progression: 10, statut: 'inprogress', assignees: ['L', 2] },
+                { id: 8, titre: 'Réunion client', priorite: '2', projet: 2, dateDebut: day(7), dateEcheance: day(7), progression: 0, statut: 'todo', assignees: ['L', 1, 3] },
+                { id: 9, titre: 'Migration DB', priorite: '1', projet: 3, dateDebut: day(-3), dateEcheance: day(0), progression: 90, statut: 'review', assignees: ['L', 1] },
+                { id: 10, titre: 'Formation équipe', priorite: '3', projet: 1, dateDebut: day(10), dateEcheance: day(14), progression: 0, statut: 'todo', assignees: ['L', 2, 3] }
+            ];
+            
+            render();
+        }
+        
+        // Init
+        init();
+    </script>
+</body>
+</html>

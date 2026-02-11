@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kanban - TaskFlow v9</title>
+    <title>Kanban - TaskFlow v14</title>
     <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <style>
@@ -50,6 +50,9 @@
         .main-content { display: flex; flex: 1; overflow: hidden; position: relative; }
         .kanban-container { flex: 1; display: flex; gap: 16px; padding: 16px; overflow-x: auto; transition: margin-right 0.25s ease; }
         .kanban-container.panel-open { margin-right: var(--panel-width); }
+        /* BUG-04 FIX: Overlay pour protéger le panel */
+        .panel-overlay { position: fixed; top: 0; left: 0; right: var(--panel-width); bottom: 0; background: rgba(0,0,0,0.1); z-index: 40; opacity: 0; pointer-events: none; transition: opacity 0.25s ease; }
+        .panel-overlay.visible { opacity: 1; pointer-events: auto; }
 
         /* Columns */
         .kanban-column { min-width: 280px; max-width: 320px; flex: 1; background: var(--bg); border-radius: 12px; display: flex; flex-direction: column; max-height: 100%; }
@@ -77,8 +80,9 @@
         .card-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 0.7rem; color: var(--text-muted); }
         .card-project { display: flex; align-items: center; gap: 3px; }
         .card-deps { display: flex; align-items: center; gap: 2px; }
-        .card-progress { height: 3px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden; }
-        .card-progress-fill { height: 100%; border-radius: 2px; }
+        .card-progress { height: 3px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden; cursor: pointer; transition: height 0.15s; }  /* KAN-03: cliquable */
+        .card-progress:hover { height: 6px; }  /* KAN-03: feedback visuel */
+        .card-progress-fill { height: 100%; border-radius: 2px; transition: width 0.2s; }
         .card-progress-fill.p1 { background: var(--danger); }
         .card-progress-fill.p2 { background: var(--warning); }
         .card-progress-fill.p3 { background: var(--info); }
@@ -142,6 +146,26 @@
         .progress-slider { flex: 1; -webkit-appearance: none; height: 6px; border-radius: 3px; background: var(--border); }
         .progress-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--primary); cursor: pointer; }
         .progress-value { font-size: 0.85rem; font-weight: 600; color: var(--primary); min-width: 40px; text-align: right; }
+        .progress-presets { display: flex; gap: 6px; margin-top: 8px; }
+        /* FUT-01: Styles pour subtasks/checklist */
+        .subtasks-section { margin-top: 12px; }
+        .subtask-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+        .subtask-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--bg); border-radius: 6px; border: 1px solid var(--border); }
+        .subtask-item.done { opacity: 0.6; }
+        .subtask-item.done .subtask-text { text-decoration: line-through; color: var(--text-muted); }
+        .subtask-checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary); }
+        .subtask-text { flex: 1; font-size: 0.85rem; }
+        .subtask-remove { width: 20px; height: 20px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; opacity: 0; transition: opacity 0.15s; border-radius: 4px; }
+        .subtask-item:hover .subtask-remove { opacity: 1; }
+        .subtask-remove:hover { background: var(--danger); color: white; }
+        .subtask-add { display: flex; gap: 6px; }
+        .subtask-add input { flex: 1; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.85rem; }
+        .subtask-add button { padding: 8px 12px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+        .subtask-add button:hover { background: var(--primary-dark); }
+        .subtask-progress { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
+        .progress-preset { flex: 1; padding: 6px 4px; font-size: 0.7rem; font-weight: 600; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); cursor: pointer; transition: all 0.15s; text-align: center; }
+        .progress-preset:hover { background: var(--primary-light); border-color: var(--primary); }
+        .progress-preset.active { background: var(--primary); color: white; border-color: var(--primary); }
 
         /* Multi-select */
         .multi-select { position: relative; }
@@ -211,6 +235,17 @@
         ::-webkit-scrollbar-thumb { background: var(--border-dark); border-radius: 3px; }
         @media (max-width: 900px) { :root { --panel-width: 320px; } .kanban-column { min-width: 250px; } }
         @media (max-width: 700px) { :root { --panel-width: 100%; } .kanban-container.panel-open { margin-right: 0; } .panel { left: 0; width: 100%; } }
+        
+        /* GEN-03: Export Print/PDF */
+        @media print {
+            body { background: white !important; }
+            .header, .panel, .panel-overlay, .demo-badge, .filter-dropdown, .column-add-btn, .btn { display: none !important; }
+            .main-content { padding: 0 !important; }
+            .kanban-container { overflow: visible !important; margin: 0 !important; }
+            .kanban-column { break-inside: avoid; }
+            .task-card { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+            @page { size: landscape; margin: 1cm; }
+        }
     </style>
 </head>
 <body>
@@ -225,6 +260,13 @@
             </div>
         </div>
         <div class="header-right">
+            <div class="filter-dropdown" id="exportDropdown">
+                <button class="btn" onclick="toggleFilter('export')">📥 Exporter ▾</button>
+                <div class="filter-menu" id="filterExportMenu">
+                    <div class="filter-option" onclick="exportPrint()">🖨️ Imprimer / PDF</div>
+                    <div class="filter-option" onclick="exportPNG()">🖼️ Image PNG</div>
+                </div>
+            </div>
             <button class="btn primary" onclick="openCreatePanel()">+ Tâche</button>
         </div>
     </div>
@@ -241,10 +283,16 @@
             <div class="filter-btn" id="filterAssigneeBtn" onclick="toggleFilterMenu('assignee')">Assignés ▾</div>
             <div class="filter-menu" id="filterAssigneeMenu"></div>
         </div>
+        <div class="filter-dropdown">
+            <div class="filter-btn" id="filterStatusBtn" onclick="toggleFilterMenu('status')">Statuts ▾</div>
+            <div class="filter-menu" id="filterStatusMenu"></div>
+        </div>
         <div class="search-box"><input type="text" id="searchInput" placeholder="Rechercher..." oninput="handleSearch(this.value)"></div>
     </div>
     <div class="main-content">
         <div class="kanban-container" id="kanbanContainer"></div>
+        <!-- BUG-04 FIX: Overlay pour confirmer avant de fermer le panel -->
+        <div class="panel-overlay" id="panelOverlay" onclick="confirmClosePanel()"></div>
         <div class="panel" id="panel">
             <div class="panel-header" id="panelHeader"></div>
             <div class="panel-content" id="panelContent"></div>
@@ -258,9 +306,9 @@
         // SCHEMA & CONSTANTS
         // ═══════════════════════════════════════════════════════════════════════
         const TASKFLOW_SCHEMA = {
-            Team: [{ id: 'nom', type: 'Text' }, { id: 'email', type: 'Text' }, { id: 'avatar', type: 'Text' }, { id: 'role', type: 'Choice' }, { id: 'actif', type: 'Bool' }],
+            Team: [{ id: 'nom', type: 'Text' }, { id: 'email', type: 'Text' }, { id: 'avatar', type: 'Text' }, { id: 'role', type: 'Choice' }, { id: 'actif', type: 'Bool' }, { id: 'couleur', type: 'Text' }],  // TEAM-01: couleur membre
             Projects: [{ id: 'nom', type: 'Text' }, { id: 'couleur', type: 'Text' }, { id: 'dateDebut', type: 'Date' }, { id: 'dateFin', type: 'Date' }, { id: 'responsable', type: 'Ref:Team' }, { id: 'actif', type: 'Bool' }],
-            Tasks: [{ id: 'titre', type: 'Text' }, { id: 'description', type: 'Text' }, { id: 'dateDebut', type: 'Date' }, { id: 'dateEcheance', type: 'Date' }, { id: 'priorite', type: 'Choice' }, { id: 'statut', type: 'Choice' }, { id: 'progression', type: 'Numeric' }, { id: 'projet', type: 'Ref:Projects' }, { id: 'assignees', type: 'RefList:Team' }, { id: 'type', type: 'Choice' }, { id: 'dependDe', type: 'RefList:Tasks' }, { id: 'tags', type: 'ChoiceList' }, { id: 'estimationH', type: 'Numeric' }, { id: 'tempsPasse', type: 'Numeric' }, { id: 'couleur', type: 'Text' }]
+            Tasks: [{ id: 'titre', type: 'Text' }, { id: 'description', type: 'Text' }, { id: 'dateDebut', type: 'Date' }, { id: 'dateEcheance', type: 'Date' }, { id: 'priorite', type: 'Choice' }, { id: 'statut', type: 'Choice' }, { id: 'progression', type: 'Numeric' }, { id: 'projet', type: 'Ref:Projects' }, { id: 'assignees', type: 'RefList:Team' }, { id: 'type', type: 'Choice' }, { id: 'dependDe', type: 'RefList:Tasks' }, { id: 'tags', type: 'ChoiceList' }, { id: 'estimationH', type: 'Numeric' }, { id: 'tempsPasse', type: 'Numeric' }, { id: 'couleur', type: 'Text' }, { id: 'subtasks', type: 'Text' }]  // FUT-01: subtasks en JSON
         };
         const PRIORITY_LABELS = { 1: 'Critique', 2: 'Haute', 3: 'Moyenne', 4: 'Basse' };
         const PRIORITY_COLORS = { 1: '#ef4444', 2: '#f59e0b', 3: '#3b82f6', 4: '#64748b' };
@@ -272,7 +320,7 @@
         // ═══════════════════════════════════════════════════════════════════════
         let tasks = [], team = [], projects = [], gristReady = false;
         let groupBy = 'statut', searchQuery = '', selectedTaskId = null;
-        let filters = { project: [], priority: [], assignee: [] };
+        let filters = { project: [], priority: [], assignee: [], status: [] };  // KAN-01: Ajout filtre statut
         let panelState = { open: false, isNew: false, taskId: null, taskIndex: -1, columnTasks: [], columnKey: null, editData: null };
         let sortableInstances = [];
         let saveTimeout = null;
@@ -281,15 +329,58 @@
         // UTILITIES
         // ═══════════════════════════════════════════════════════════════════════
         const showToast = (m, t) => { const c = document.getElementById('toastContainer'); const e = document.createElement('div'); e.className = 'toast ' + (t||''); e.textContent = m; c.appendChild(e); setTimeout(() => e.remove(), 3000); };
+        
+        // GEN-03: Export functions
+        function exportPrint() {
+            document.querySelectorAll('.filter-menu').forEach(m => m.classList.remove('open'));
+            setTimeout(() => window.print(), 100);
+        }
+        
+        async function exportPNG() {
+            document.querySelectorAll('.filter-menu').forEach(m => m.classList.remove('open'));
+            showToast('Préparation export...', 'info');
+            
+            if (!window.html2canvas) {
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+                document.head.appendChild(script);
+                await new Promise(resolve => script.onload = resolve);
+            }
+            
+            try {
+                const element = document.getElementById('kanbanContainer');
+                const canvas = await html2canvas(element, { backgroundColor: '#f8fafc', scale: 2, logging: false });
+                const link = document.createElement('a');
+                link.download = 'kanban-' + new Date().toISOString().split('T')[0] + '.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                showToast('Export PNG réussi', 'success');
+            } catch (e) {
+                console.error('Export error:', e);
+                showToast('Erreur export PNG', 'error');
+            }
+        }
+        
         const showSaveIndicator = () => { const el = document.getElementById('saveIndicator'); el.classList.add('visible'); clearTimeout(saveTimeout); saveTimeout = setTimeout(() => el.classList.remove('visible'), 1500); };
         const escapeHtml = (t) => { if (!t) return ''; const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
         const gristToDate = (ts) => ts ? new Date(ts * 1000) : null;
         const dateToGrist = (d) => d ? Math.floor(d.getTime() / 1000) : null;
         const formatDateInput = (d) => d ? d.toISOString().split('T')[0] : '';
+        // BUG-01 FIX: Parsing robuste des dates depuis input type="date" (évite problème timezone UTC)
+        const parseInputDate = (str) => {
+            if (!str) return null;
+            const parts = str.split('-');
+            if (parts.length !== 3) return null;
+            const [y, m, d] = parts.map(Number);
+            if (!y || !m || !d || isNaN(y) || isNaN(m) || isNaN(d)) return null;
+            return new Date(y, m - 1, d, 12, 0, 0); // Midi heure locale pour éviter les décalages
+        };
         const addDays = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
         const getProjectName = (id) => { const p = projects.find(x => x.id === id); return p?.nom || ''; };
         const getProjectColor = (id) => { const p = projects.find(x => x.id === id); return p?.couleur || '#64748b'; };
         const getTeamMemberName = (id) => { const m = team.find(x => x.id === id); return m?.nom || ''; };
+        // TEAM-01: Couleur personnalisée par membre
+        const getTeamMemberColor = (id) => { const m = team.find(x => x.id === id); return m?.couleur || '#4f46e5'; };  // Défaut: primary
         const getInitials = (n) => n ? n.split(' ').map(x => x[0]).join('').toUpperCase().slice(0, 2) : '?';
         const getRefListArray = (val) => { if (!val) return []; if (Array.isArray(val)) return val[0] === 'L' ? val.slice(1).map(Number).filter(n => !isNaN(n)) : val.map(Number).filter(n => !isNaN(n)); return []; };
         const toGristRefList = (arr) => arr && arr.length ? ['L', ...arr] : null;
@@ -321,17 +412,22 @@
             document.getElementById('filterProjectMenu').innerHTML = projects.map(p => `<div class="filter-option" onclick="toggleFilterValue('project', ${p.id})"><input type="checkbox" ${filters.project.includes(p.id) ? 'checked' : ''}><span style="color:${p.couleur}">●</span> ${escapeHtml(p.nom)}</div>`).join('') || '<div class="filter-option">Aucun</div>';
             document.getElementById('filterPriorityMenu').innerHTML = [1,2,3,4].map(p => `<div class="filter-option" onclick="toggleFilterValue('priority', ${p})"><input type="checkbox" ${filters.priority.includes(p) ? 'checked' : ''}><span style="color:${PRIORITY_COLORS[p]}">●</span> ${PRIORITY_LABELS[p]}</div>`).join('');
             document.getElementById('filterAssigneeMenu').innerHTML = team.filter(m => m.actif !== false).map(m => `<div class="filter-option" onclick="toggleFilterValue('assignee', ${m.id})"><input type="checkbox" ${filters.assignee.includes(m.id) ? 'checked' : ''}>${escapeHtml(m.nom)}</div>`).join('') || '<div class="filter-option">Aucun</div>';
+            // KAN-01: Filtre par statut
+            document.getElementById('filterStatusMenu').innerHTML = Object.entries(STATUS_LABELS).map(([key, label]) => `<div class="filter-option" onclick="toggleFilterValue('status', '${key}')"><input type="checkbox" ${filters.status.includes(key) ? 'checked' : ''}>${label}</div>`).join('');
             document.getElementById('filterProjectBtn').classList.toggle('has-filter', filters.project.length > 0);
             document.getElementById('filterPriorityBtn').classList.toggle('has-filter', filters.priority.length > 0);
             document.getElementById('filterAssigneeBtn').classList.toggle('has-filter', filters.assignee.length > 0);
+            document.getElementById('filterStatusBtn').classList.toggle('has-filter', filters.status.length > 0);
         }
-        function toggleFilterValue(type, val) { const arr = filters[type]; const idx = arr.indexOf(val); if (idx === -1) arr.push(val); else arr.splice(idx, 1); updateFilterMenus(); render(); }
+        function toggleFilterValue(type, val) { const arr = filters[type]; const idx = arr.indexOf(val); if (idx === -1) arr.push(val); else arr.splice(idx, 1); updateFilterMenus(); broadcastFilters(); render(); }
         function handleSearch(q) { searchQuery = q.toLowerCase(); render(); }
         function getFilteredTasks() {
             return tasks.filter(t => {
                 if (filters.project.length && !filters.project.includes(t.projet)) return false;
                 if (filters.priority.length && !filters.priority.includes(getPriority(t))) return false;
                 if (filters.assignee.length && !getAssignees(t).some(a => filters.assignee.includes(a))) return false;
+                // KAN-01: Filtre par statut
+                if (filters.status.length && !filters.status.includes(t.statut || 'todo')) return false;
                 if (searchQuery && !(t.titre||'').toLowerCase().includes(searchQuery)) return false;
                 return true;
             });
@@ -399,8 +495,8 @@
                     ${projectName ? `<span class="card-project"><span style="color:${projectColor}">●</span> ${escapeHtml(projectName)}</span>` : ''}
                     ${deps.length ? `<span class="card-deps">🔗 ${deps.length}</span>` : ''}
                 </div>
-                ${t.type !== 'jalon' ? `<div class="card-progress"><div class="card-progress-fill p${p}" style="width:${t.progression || 0}%"></div></div>` : ''}
-                ${assignees.length ? `<div class="card-assignees">${assignees.slice(0, 3).map(id => `<div class="card-avatar">${getInitials(getTeamMemberName(id))}</div>`).join('')}${assignees.length > 3 ? `<div class="card-avatar more">+${assignees.length - 3}</div>` : ''}</div>` : ''}
+                ${t.type !== 'jalon' ? `<div class="card-progress" onclick="event.stopPropagation();setCardProgress(event, ${t.id})"><div class="card-progress-fill p${p}" style="width:${t.progression || 0}%"></div></div>` : ''}
+                ${assignees.length ? `<div class="card-assignees">${assignees.slice(0, 3).map(id => `<div class="card-avatar" style="background:${getTeamMemberColor(id)}">${getInitials(getTeamMemberName(id))}</div>`).join('')}${assignees.length > 3 ? `<div class="card-avatar more">+${assignees.length - 3}</div>` : ''}</div>` : ''}
             </div>`;
         }
 
@@ -425,8 +521,29 @@
         // ═══════════════════════════════════════════════════════════════════════
         // PANEL
         // ═══════════════════════════════════════════════════════════════════════
-        function openPanel() { panelState.open = true; document.getElementById('panel').classList.add('open'); document.getElementById('kanbanContainer').classList.add('panel-open'); }
-        function closePanel() { panelState.open = false; document.getElementById('panel').classList.remove('open'); document.getElementById('kanbanContainer').classList.remove('panel-open'); panelState = { open: false, isNew: false, taskId: null, taskIndex: -1, columnTasks: [], columnKey: null, editData: null }; selectedTaskId = null; render(); }
+        function openPanel() { 
+            panelState.open = true; 
+            document.getElementById('panel').classList.add('open'); 
+            document.getElementById('kanbanContainer').classList.add('panel-open'); 
+            document.getElementById('panelOverlay').classList.add('visible');
+        }
+        function closePanel() { 
+            panelState.open = false; 
+            document.getElementById('panel').classList.remove('open'); 
+            document.getElementById('kanbanContainer').classList.remove('panel-open'); 
+            document.getElementById('panelOverlay').classList.remove('visible');
+            panelState = { open: false, isNew: false, taskId: null, taskIndex: -1, columnTasks: [], columnKey: null, editData: null }; 
+            selectedTaskId = null; 
+            render(); 
+        }
+        // BUG-04 FIX: Confirmation avant fermeture si nouvelle tâche non sauvegardée
+        function confirmClosePanel() {
+            if (panelState.isNew && panelState.editData?.titre?.trim()) {
+                if (confirm('Fermer sans créer la tâche ?')) closePanel();
+            } else {
+                closePanel();
+            }
+        }
 
         function openTaskPanel(taskId) {
             const task = tasks.find(t => t.id === taskId);
@@ -465,14 +582,37 @@
             
             panelState = {
                 open: true, isNew: true, taskId: null, taskIndex: -1, columnTasks: [], columnKey: colKey,
-                editData: { titre: '', description: '', type: 'tache', priorite: preset.priorite || '3', statut: preset.statut || 'todo', progression: 0, dateDebut: dateToGrist(today), dateEcheance: dateToGrist(addDays(today, 7)), projet: preset.projet !== undefined ? preset.projet : (projects.length > 0 ? projects[0].id : null), assignees: [], dependDe: [], tags: [], estimationH: null, tempsPasse: null }
+                editData: { titre: '', description: '', type: 'tache', priorite: preset.priorite || '3', statut: preset.statut || 'todo', progression: 0, dateDebut: dateToGrist(today), dateEcheance: dateToGrist(addDays(today, 7)), projet: preset.projet !== undefined ? preset.projet : (projects.length > 0 ? projects[0].id : null), assignees: [], dependDe: [], tags: [], estimationH: null, tempsPasse: null, subtasks: [] }
             };
             renderPanelTask();
             openPanel();
             setTimeout(() => document.getElementById('taskTitle')?.focus(), 100);
         }
 
-        function cloneTaskData(task) { return { titre: task.titre || '', description: task.description || '', type: task.type || 'tache', priorite: String(task.priorite || '3'), statut: task.statut || 'todo', progression: task.progression || 0, dateDebut: task.dateDebut, dateEcheance: task.dateEcheance, projet: task.projet || null, assignees: getAssignees(task), dependDe: getDependsOn(task), tags: getTags(task), estimationH: task.estimationH || null, tempsPasse: task.tempsPasse || null }; }
+        function cloneTaskData(task) { return { titre: task.titre || '', description: task.description || '', type: task.type || 'tache', priorite: String(task.priorite || '3'), statut: task.statut || 'todo', progression: task.progression || 0, dateDebut: task.dateDebut, dateEcheance: task.dateEcheance, projet: task.projet || null, assignees: getAssignees(task), dependDe: getDependsOn(task), tags: getTags(task), estimationH: task.estimationH || null, tempsPasse: task.tempsPasse || null, subtasks: getSubtasks(task) }; }
+        
+        // FIX: Synchroniser editData vers le task local dans tasks[]
+        function syncLocalTask() {
+            if (panelState.isNew || !panelState.taskId) return;
+            const task = tasks.find(t => t.id === panelState.taskId);
+            const data = panelState.editData;
+            if (!task || !data) return;
+            task.titre = data.titre;
+            task.description = data.description;
+            task.type = data.type;
+            task.priorite = data.priorite;
+            task.statut = data.statut;
+            task.progression = data.progression;
+            task.dateDebut = data.dateDebut;
+            task.dateEcheance = data.dateEcheance;
+            task.projet = data.projet;
+            task.assignees = ['L', ...data.assignees];
+            task.dependDe = ['L', ...data.dependDe];
+            task.tags = ['L', ...data.tags];
+            task.estimationH = data.estimationH;
+            task.tempsPasse = data.tempsPasse;
+            task.subtasks = subtasksToJson(data.subtasks);
+        }
 
         function navigatePanelTask(dir) {
             if (panelState.isNew || panelState.columnTasks.length < 2) return;
@@ -494,7 +634,7 @@
             const typeIcon = TYPE_ICONS[data.type] || '📋';
             const titleText = panelState.isNew ? 'Nouvelle tâche' : (data.titre || 'Sans titre');
 
-            header.innerHTML = `<div class="panel-nav"><button class="panel-nav-btn" onclick="navigatePanelTask(-1)" ${!canNavigate ? 'disabled' : ''}>◀</button><span class="panel-title"><span style="margin-right:6px">${typeIcon}</span>${escapeHtml(titleText)}</span><button class="panel-nav-btn" onclick="navigatePanelTask(1)" ${!canNavigate ? 'disabled' : ''}>▶</button></div><button class="panel-close" onclick="closePanel()">×</button>`;
+            header.innerHTML = `<div class="panel-nav"><button class="panel-nav-btn" onclick="navigatePanelTask(-1)" ${!canNavigate ? 'disabled' : ''}>◀</button><span class="panel-title"><span style="margin-right:6px">${typeIcon}</span>${escapeHtml(titleText)}</span><button class="panel-nav-btn" onclick="navigatePanelTask(1)" ${!canNavigate ? 'disabled' : ''}>▶</button></div><button class="panel-close" onclick="confirmClosePanel()">×</button>`;
 
             const s = gristToDate(data.dateDebut), e = gristToDate(data.dateEcheance);
             const projectOptions = projects.filter(p => p.actif !== false).map(p => `<option value="${p.id}" ${data.projet === p.id ? 'selected' : ''}>${escapeHtml(p.nom)}</option>`).join('');
@@ -518,7 +658,7 @@
                 </div>
                 <div class="panel-section">
                     <div class="form-group"><label class="form-label">Priorité</label><div class="priority-selector"><div class="priority-pill p1 ${data.priorite == '1' ? 'selected' : ''}" onclick="updateField('priorite','1')">Critique</div><div class="priority-pill p2 ${data.priorite == '2' ? 'selected' : ''}" onclick="updateField('priorite','2')">Haute</div><div class="priority-pill p3 ${data.priorite == '3' ? 'selected' : ''}" onclick="updateField('priorite','3')">Moyenne</div><div class="priority-pill p4 ${data.priorite == '4' ? 'selected' : ''}" onclick="updateField('priorite','4')">Basse</div></div></div>
-                    ${data.type !== 'jalon' ? `<div class="form-group"><label class="form-label">Statut</label><div class="status-selector"><div class="status-pill ${data.statut === 'todo' ? 'selected' : ''}" onclick="updateField('statut','todo')">À faire</div><div class="status-pill ${data.statut === 'inprogress' ? 'selected' : ''}" onclick="updateField('statut','inprogress')">En cours</div><div class="status-pill ${data.statut === 'review' ? 'selected' : ''}" onclick="updateField('statut','review')">En revue</div><div class="status-pill ${data.statut === 'done' ? 'selected' : ''}" onclick="updateField('statut','done')">Terminé</div></div></div><div class="form-group"><label class="form-label">Progression</label><div class="progress-container"><input type="range" class="progress-slider" min="0" max="100" value="${data.progression}" oninput="document.getElementById('progressValue').textContent=this.value+'%'" onchange="updateField('progression', parseInt(this.value))"><span class="progress-value" id="progressValue">${data.progression}%</span></div></div>` : ''}
+                    ${data.type !== 'jalon' ? `<div class="form-group"><label class="form-label">Statut</label><div class="status-selector"><div class="status-pill ${data.statut === 'todo' ? 'selected' : ''}" onclick="updateField('statut','todo')">À faire</div><div class="status-pill ${data.statut === 'inprogress' ? 'selected' : ''}" onclick="updateField('statut','inprogress')">En cours</div><div class="status-pill ${data.statut === 'review' ? 'selected' : ''}" onclick="updateField('statut','review')">En revue</div><div class="status-pill ${data.statut === 'done' ? 'selected' : ''}" onclick="updateField('statut','done')">Terminé</div></div></div><div class="form-group"><label class="form-label">Progression</label><div class="progress-container"><input type="range" class="progress-slider" min="0" max="100" value="${data.progression}" oninput="document.getElementById('progressValue').textContent=this.value+'%'" onchange="updateField('progression', parseInt(this.value))"><span class="progress-value" id="progressValue">${data.progression}%</span></div><div class="progress-presets"><div class="progress-preset ${data.progression === 0 ? 'active' : ''}" onclick="setProgressPreset(0)">0%</div><div class="progress-preset ${data.progression === 25 ? 'active' : ''}" onclick="setProgressPreset(25)">25%</div><div class="progress-preset ${data.progression === 50 ? 'active' : ''}" onclick="setProgressPreset(50)">50%</div><div class="progress-preset ${data.progression === 75 ? 'active' : ''}" onclick="setProgressPreset(75)">75%</div><div class="progress-preset ${data.progression === 100 ? 'active' : ''}" onclick="setProgressPreset(100)">100%</div></div></div>` : ''}
                 </div>
                 <div class="panel-section">
                     <div class="form-group"><label class="form-label">Assignés</label><div class="multi-select" id="assigneesSelect"><div class="multi-select-trigger" onclick="toggleMultiSelect('assigneesSelect')"><div class="multi-select-values">${assigneesChips || '<span class="multi-select-placeholder">Sélectionner...</span>'}</div><span class="multi-select-arrow">▾</span></div><div class="multi-select-dropdown">${assigneesOptions || '<div class="multi-select-empty">Aucun</div>'}</div></div></div>
@@ -527,6 +667,24 @@
                 <div class="panel-section">
                     <div class="form-group"><label class="form-label">Temps</label><div class="time-row"><div class="time-group"><label>Estimé</label><div class="time-input-wrap"><input type="number" min="0" step="0.5" value="${estim || ''}" placeholder="0" onchange="updateField('estimationH', parseFloat(this.value) || null)"><span>h</span></div></div><div class="time-group"><label>Passé</label><div class="time-input-wrap"><input type="number" min="0" step="0.5" value="${passe || ''}" placeholder="0" onchange="updateField('tempsPasse', parseFloat(this.value) || null)"><span>h</span></div></div></div>${estim > 0 ? `<div class="time-bar"><div class="time-bar-fill ${timeOver ? 'over' : ''}" style="width:${timePercent}%"></div></div>` : ''}</div>
                     <div class="form-group"><label class="form-label">Tags</label><div class="tags-input" onclick="document.getElementById('tagInput').focus()">${tagsChips}<input type="text" id="tagInput" placeholder="${data.tags.length ? '' : 'Ajouter...'}" onkeydown="handleTagKeydown(event)"></div></div>
+                </div>
+                <div class="panel-section subtasks-section">
+                    <div class="form-group">
+                        <label class="form-label">Checklist ${data.subtasks?.length ? `(${data.subtasks.filter(s => s.done).length}/${data.subtasks.length})` : ''}</label>
+                        <div class="subtask-list">
+                            ${(data.subtasks || []).map(st => `
+                                <div class="subtask-item ${st.done ? 'done' : ''}">
+                                    <input type="checkbox" class="subtask-checkbox" ${st.done ? 'checked' : ''} onchange="toggleSubtask(${st.id})">
+                                    <span class="subtask-text">${escapeHtml(st.text)}</span>
+                                    <button class="subtask-remove" onclick="removeSubtask(${st.id})">×</button>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div class="subtask-add">
+                            <input type="text" id="newSubtaskInput" placeholder="Nouvelle sous-tâche..." onkeydown="handleSubtaskKeydown(event)">
+                            <button onclick="addSubtask()">+</button>
+                        </div>
+                    </div>
                 </div>
                 <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" placeholder="Notes..." oninput="updateField('description', this.value, true)">${escapeHtml(data.description)}</textarea></div>
                 ${!panelState.isNew ? `<div id="deleteSection"><button class="panel-btn danger" onclick="showDeleteConfirm()">🗑️ Supprimer</button><div class="delete-confirm" id="deleteConfirm"><div class="delete-confirm-text">Supprimer ?</div><div class="delete-confirm-actions"><button class="delete-confirm-btn cancel" onclick="hideDeleteConfirm()">Annuler</button><button class="delete-confirm-btn confirm" onclick="confirmDelete()">Supprimer</button></div></div></div>` : ''}
@@ -541,24 +699,126 @@
         function updateField(field, value, noSave = false) {
             const data = panelState.editData;
             if (!data) return;
-            if (field === 'dateDebut' || field === 'dateEcheance') value = value ? dateToGrist(new Date(value)) : null;
+            // BUG-01 FIX: Utiliser parseInputDate pour éviter problèmes de timezone
+            if (field === 'dateDebut' || field === 'dateEcheance') value = value ? dateToGrist(parseInputDate(value)) : null;
             data[field] = value;
             if (field === 'type' && value === 'jalon' && data.dateDebut) data.dateEcheance = data.dateDebut;
-            const visualFields = ['type', 'priorite', 'statut', 'projet'];
+            
+            // Synchroniser le task local pour affichage immédiat
+            syncLocalTask();
+            
+            const visualFields = ['type', 'priorite', 'statut', 'projet', 'progression'];
             if (visualFields.includes(field)) { renderPanelTask(); if (!panelState.isNew) render(); }
             if (field === 'titre' && panelState.isNew) { const btn = document.querySelector('.panel-footer .panel-btn'); if (btn) btn.disabled = !value || !value.trim(); }
             if (!panelState.isNew && !noSave && gristReady) saveTaskToGrist();
         }
 
+        function setProgressPreset(value) {
+            const data = panelState.editData;
+            if (!data) return;
+            data.progression = value;
+            syncLocalTask();  // FIX: Synchroniser le task local
+            
+            const slider = document.querySelector('.progress-slider');
+            const valueSpan = document.getElementById('progressValue');
+            if (slider) slider.value = value;
+            if (valueSpan) valueSpan.textContent = value + '%';
+            document.querySelectorAll('.progress-preset').forEach(btn => btn.classList.toggle('active', parseInt(btn.textContent) === value));
+            if (!panelState.isNew && gristReady) saveTaskToGrist();
+            render();
+        }
+        
+        // KAN-03: Clic direct sur barre de progression
+        async function setCardProgress(e, taskId) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const percent = Math.round((clickX / rect.width) * 100);
+            const roundedPercent = Math.round(percent / 5) * 5;  // Arrondir à 5%
+            const clampedPercent = Math.max(0, Math.min(100, roundedPercent));
+            
+            const task = tasks.find(t => t.id === taskId);
+            if (!task) return;
+            
+            task.progression = clampedPercent;
+            if (task.progression === 100 && task.statut !== 'done') task.statut = 'done';
+            
+            if (gristReady) {
+                try {
+                    await grist.docApi.applyUserActions([['UpdateRecord', 'Tasks', taskId, { progression: clampedPercent, statut: task.statut }]]);
+                    showToast(`${clampedPercent}%`, 'success');
+                } catch (err) {
+                    showToast('Erreur', 'error');
+                }
+            }
+            render();
+        }
+
         function toggleMultiSelect(id) { const el = document.getElementById(id); document.querySelectorAll('.multi-select').forEach(s => { if (s.id !== id) s.classList.remove('open'); }); el.classList.toggle('open'); }
-        function toggleAssignee(id) { const data = panelState.editData; const idx = data.assignees.indexOf(id); if (idx === -1) data.assignees.push(id); else data.assignees.splice(idx, 1); if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); render(); }
-        function removeAssignee(id) { const data = panelState.editData; const idx = data.assignees.indexOf(id); if (idx !== -1) { data.assignees.splice(idx, 1); if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); render(); } }
-        function toggleDependency(id) { const data = panelState.editData; const idx = data.dependDe.indexOf(id); if (idx === -1) data.dependDe.push(id); else data.dependDe.splice(idx, 1); if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); }
-        function removeDependency(id) { const data = panelState.editData; const idx = data.dependDe.indexOf(id); if (idx !== -1) { data.dependDe.splice(idx, 1); if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); } }
-        function handleTagKeydown(e) { const data = panelState.editData; if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); const tag = e.target.value.trim().replace(/^#/, ''); if (tag && !data.tags.includes(tag)) { data.tags.push(tag); e.target.value = ''; if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); } } else if (e.key === 'Backspace' && !e.target.value && data.tags.length) { data.tags.pop(); if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); } }
-        function removeTag(tag) { const data = panelState.editData; const idx = data.tags.indexOf(tag); if (idx !== -1) { data.tags.splice(idx, 1); if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); } }
+        function toggleAssignee(id) { const data = panelState.editData; const idx = data.assignees.indexOf(id); if (idx === -1) data.assignees.push(id); else data.assignees.splice(idx, 1); syncLocalTask(); if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); render(); }
+        function removeAssignee(id) { const data = panelState.editData; const idx = data.assignees.indexOf(id); if (idx !== -1) { data.assignees.splice(idx, 1); syncLocalTask(); if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); render(); } }
+        function toggleDependency(id) { const data = panelState.editData; const idx = data.dependDe.indexOf(id); if (idx === -1) data.dependDe.push(id); else data.dependDe.splice(idx, 1); syncLocalTask(); if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); }
+        function removeDependency(id) { const data = panelState.editData; const idx = data.dependDe.indexOf(id); if (idx !== -1) { data.dependDe.splice(idx, 1); syncLocalTask(); if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); } }
+        function handleTagKeydown(e) { const data = panelState.editData; if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); const tag = e.target.value.trim().replace(/^#/, ''); if (tag && !data.tags.includes(tag)) { data.tags.push(tag); e.target.value = ''; syncLocalTask(); if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); } } else if (e.key === 'Backspace' && !e.target.value && data.tags.length) { data.tags.pop(); syncLocalTask(); if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); } }
+        function removeTag(tag) { const data = panelState.editData; const idx = data.tags.indexOf(tag); if (idx !== -1) { data.tags.splice(idx, 1); syncLocalTask(); if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); } }
         function showDeleteConfirm() { document.getElementById('deleteConfirm').classList.add('visible'); }
         function hideDeleteConfirm() { document.getElementById('deleteConfirm').classList.remove('visible'); }
+        
+        // FUT-01: Gestion des subtasks/checklist
+        function getSubtasks(task) {
+            if (!task?.subtasks) return [];
+            try { return JSON.parse(task.subtasks); } catch (e) { return []; }
+        }
+        function subtasksToJson(subtasks) {
+            return JSON.stringify(subtasks || []);
+        }
+        function addSubtask() {
+            const input = document.getElementById('newSubtaskInput');
+            const text = input?.value?.trim();
+            if (!text) return;
+            const data = panelState.editData;
+            if (!data.subtasks) data.subtasks = [];
+            data.subtasks.push({ id: Date.now(), text: text, done: false });
+            input.value = '';
+            updateSubtaskProgress();
+            if (!panelState.isNew && gristReady) saveTaskToGrist();
+            renderPanelTask();
+            render();  // FIX: Actualiser l'affichage des cartes
+        }
+        function toggleSubtask(id) {
+            const data = panelState.editData;
+            if (!data.subtasks) return;
+            const st = data.subtasks.find(s => s.id === id);
+            if (st) { 
+                st.done = !st.done; 
+                updateSubtaskProgress();
+                if (!panelState.isNew && gristReady) saveTaskToGrist();
+                renderPanelTask(); 
+                render();
+            }
+        }
+        function removeSubtask(id) {
+            const data = panelState.editData;
+            if (!data.subtasks) return;
+            const idx = data.subtasks.findIndex(s => s.id === id);
+            if (idx !== -1) { 
+                data.subtasks.splice(idx, 1); 
+                updateSubtaskProgress();
+                if (!panelState.isNew && gristReady) saveTaskToGrist();
+                renderPanelTask(); 
+                render();  // FIX: Actualiser l'affichage des cartes
+            }
+        }
+        function updateSubtaskProgress() {
+            const data = panelState.editData;
+            if (!data.subtasks || data.subtasks.length === 0) return;
+            const done = data.subtasks.filter(s => s.done).length;
+            const total = data.subtasks.length;
+            data.progression = Math.round((done / total) * 100);
+            syncLocalTask();  // FIX: Synchroniser immédiatement pour affichage correct
+        }
+        function handleSubtaskKeydown(e) {
+            if (e.key === 'Enter') { e.preventDefault(); addSubtask(); }
+        }
 
         // ═══════════════════════════════════════════════════════════════════════
         // CRUD
@@ -566,14 +826,15 @@
         async function saveTaskToGrist() {
             const data = panelState.editData;
             if (!data || panelState.isNew || !gristReady) return;
-            const record = { titre: data.titre, description: data.description, type: data.type, priorite: data.priorite, statut: data.statut, progression: data.progression, dateDebut: data.dateDebut, dateEcheance: data.dateEcheance, projet: data.projet, assignees: toGristRefList(data.assignees), dependDe: toGristRefList(data.dependDe), tags: toGristChoiceList(data.tags), estimationH: data.estimationH, tempsPasse: data.tempsPasse };
+            syncLocalTask();  // FIX: Synchroniser localement avant envoi API
+            const record = { titre: data.titre, description: data.description, type: data.type, priorite: data.priorite, statut: data.statut, progression: data.progression, dateDebut: data.dateDebut, dateEcheance: data.dateEcheance, projet: data.projet, assignees: toGristRefList(data.assignees), dependDe: toGristRefList(data.dependDe), tags: toGristChoiceList(data.tags), estimationH: data.estimationH, tempsPasse: data.tempsPasse, subtasks: subtasksToJson(data.subtasks) };
             try { await grist.docApi.applyUserActions([['UpdateRecord', 'Tasks', panelState.taskId, record]]); showSaveIndicator(); } catch (e) { showToast('Erreur sauvegarde', 'error'); }
         }
 
         async function createTask() {
             const data = panelState.editData;
             if (!data || !data.titre?.trim()) { showToast('Titre requis', 'error'); return; }
-            const record = { titre: data.titre, description: data.description || '', type: data.type || 'tache', priorite: data.priorite || '3', statut: data.statut || 'todo', progression: data.progression || 0, dateDebut: data.dateDebut, dateEcheance: data.dateEcheance, projet: data.projet, assignees: toGristRefList(data.assignees), dependDe: toGristRefList(data.dependDe), tags: toGristChoiceList(data.tags), estimationH: data.estimationH, tempsPasse: data.tempsPasse };
+            const record = { titre: data.titre, description: data.description || '', type: data.type || 'tache', priorite: data.priorite || '3', statut: data.statut || 'todo', progression: data.progression || 0, dateDebut: data.dateDebut, dateEcheance: data.dateEcheance, projet: data.projet, assignees: toGristRefList(data.assignees), dependDe: toGristRefList(data.dependDe), tags: toGristChoiceList(data.tags), estimationH: data.estimationH, tempsPasse: data.tempsPasse, subtasks: subtasksToJson(data.subtasks) };
             if (gristReady) {
                 try { await grist.docApi.applyUserActions([['AddRecord', 'Tasks', null, record]]); showToast('Créée', 'success'); await loadAllData(); closePanel(); } catch (e) { showToast('Erreur création', 'error'); }
             } else { record.id = Date.now(); tasks.push(record); showToast('Créée', 'success'); render(); closePanel(); }
@@ -596,12 +857,31 @@
                 await loadAllData();
                 grist.onRecords(async () => await loadAllData());
                 grist.onRecord((rec) => { if (rec?.id && rec.id !== selectedTaskId) { selectedTaskId = rec.id; render(); } });
+                // GEN-02: Synchronisation des filtres inter-widgets
+                grist.onOptions((options, interaction) => {
+                    if (options?.filters && interaction?.source !== 'self') {
+                        const f = options.filters;
+                        filters.project = Array.isArray(f.project) ? f.project : [];
+                        filters.priority = Array.isArray(f.priority) ? f.priority : [];
+                        filters.assignee = Array.isArray(f.assignee) ? f.assignee : [];
+                        updateFilterMenus();
+                        render();
+                    }
+                });
             } catch (e) { console.log('Demo mode'); useDemoMode(); }
+        }
+        
+        // GEN-02: Broadcast des filtres vers les autres widgets
+        function broadcastFilters() {
+            if (gristReady && typeof grist !== 'undefined' && grist.setOption) {
+                try { grist.setOption('filters', { project: filters.project, priority: filters.priority, assignee: filters.assignee }); } 
+                catch (e) { console.log('setOption not available'); }
+            }
         }
 
         function useDemoMode() {
             document.body.insertAdjacentHTML('beforeend', '<div class="demo-badge">Démo</div>');
-            team = [{ id: 1, nom: 'Alice Martin', actif: true }, { id: 2, nom: 'Bob Durant', actif: true }, { id: 3, nom: 'Claire Bernard', actif: true }];
+            team = [{ id: 1, nom: 'Alice Martin', actif: true, couleur: '#4f46e5' }, { id: 2, nom: 'Bob Durant', actif: true, couleur: '#10b981' }, { id: 3, nom: 'Claire Bernard', actif: true, couleur: '#f59e0b' }];  // TEAM-01: couleurs
             projects = [{ id: 1, nom: 'Refonte Portail', couleur: '#4f46e5', actif: true }, { id: 2, nom: 'App Mobile', couleur: '#10b981', actif: true }];
             const today = new Date();
             const day = (d) => dateToGrist(new Date(today.getFullYear(), today.getMonth(), today.getDate() + d));
@@ -621,9 +901,16 @@
         document.addEventListener('click', (e) => {
             if (!e.target.closest('.filter-dropdown')) document.querySelectorAll('.filter-menu').forEach(m => m.classList.remove('open'));
             if (!e.target.closest('.multi-select')) document.querySelectorAll('.multi-select').forEach(s => s.classList.remove('open'));
+            // GEN-01: Désélection si clic en dehors d'une carte, du panel ou des contrôles
+            if (!e.target.closest('.task-card, .panel, .toolbar, .filter-dropdown, .column-add-btn, .btn')) {
+                if (selectedTaskId !== null && !panelState.open) {
+                    selectedTaskId = null;
+                    render();
+                }
+            }
         });
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && panelState.open) closePanel();
+            if (e.key === 'Escape' && panelState.open) confirmClosePanel();
             if (panelState.open && !panelState.isNew && !e.target.matches('input, textarea, select')) {
                 if (e.key === 'ArrowLeft') navigatePanelTask(-1);
                 if (e.key === 'ArrowRight') navigatePanelTask(1);

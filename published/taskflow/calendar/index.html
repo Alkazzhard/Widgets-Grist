@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calendar - TaskFlow v16</title>
+    <title>Calendar - TaskFlow v21</title>
     <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
     <style>
         :root {
@@ -313,6 +313,17 @@
 
         @media (max-width: 900px) { :root { --panel-width: 320px; } .year-grid { grid-template-columns: repeat(3, 1fr); } }
         @media (max-width: 700px) { :root { --panel-width: 100%; } .grid-container.panel-open { margin-right: 0; } .panel { left: 0; width: 100%; } .year-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 12px; } .legend { display: none; } }
+        
+        /* GEN-03: Export Print/PDF */
+        @media print {
+            body { background: white !important; }
+            .header, .panel, .demo-badge, .filter-dropdown, .btn { display: none !important; }
+            .main-content { padding: 0 !important; }
+            .grid-container { overflow: visible !important; margin: 0 !important; }
+            .month-grid, .week-grid, .year-grid { overflow: visible !important; }
+            .day-cell, .event-bar { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+            @page { size: landscape; margin: 1cm; }
+        }
     </style>
 </head>
 <body>
@@ -327,7 +338,9 @@
             <button class="btn" onclick="goToday()">Aujourd'hui</button>
             <div class="view-controls">
                 <button class="btn active" onclick="setView('month')" id="btnMonth">Mois</button>
+                <button class="btn" onclick="setView('biweek')" id="btnBiweek">2 Sem</button>
                 <button class="btn" onclick="setView('week')" id="btnWeek">Semaine</button>
+                <button class="btn" onclick="setView('workweek')" id="btnWorkweek">5 Jours</button>
                 <button class="btn" onclick="setView('year')" id="btnYear">Année</button>
             </div>
         </div>
@@ -340,6 +353,17 @@
                 <div class="filter-dropdown">
                     <div class="filter-btn" id="filterPriorityBtn" onclick="toggleFilter('priority')">Priorités ▾</div>
                     <div class="filter-menu" id="filterPriorityMenu"></div>
+                </div>
+                <div class="filter-dropdown">
+                    <div class="filter-btn" id="filterAssigneeBtn" onclick="toggleFilter('assignee')">Équipe ▾</div>
+                    <div class="filter-menu" id="filterAssigneeMenu"></div>
+                </div>
+            </div>
+            <div class="filter-dropdown" id="exportDropdown">
+                <button class="btn" onclick="toggleFilter('export')">📥 Exporter ▾</button>
+                <div class="filter-menu" id="filterExportMenu">
+                    <div class="filter-option" onclick="exportPrint()">🖨️ Imprimer / PDF</div>
+                    <div class="filter-option" onclick="exportPNG()">🖼️ Image PNG</div>
                 </div>
             </div>
             <button class="btn primary" onclick="openCreatePanel()">+ Tâche</button>
@@ -375,7 +399,7 @@
         // SCHEMA & CONSTANTS
         // ═══════════════════════════════════════════════════════════════════════
         const TASKFLOW_SCHEMA = {
-            Team: [{ id: 'nom', type: 'Text' }, { id: 'email', type: 'Text' }, { id: 'avatar', type: 'Text' }, { id: 'role', type: 'Choice' }, { id: 'actif', type: 'Bool' }],
+            Team: [{ id: 'nom', type: 'Text' }, { id: 'email', type: 'Text' }, { id: 'avatar', type: 'Text' }, { id: 'role', type: 'Choice' }, { id: 'actif', type: 'Bool' }, { id: 'couleur', type: 'Text' }],  // TEAM-01
             Projects: [{ id: 'nom', type: 'Text' }, { id: 'couleur', type: 'Text' }, { id: 'dateDebut', type: 'Date' }, { id: 'dateFin', type: 'Date' }, { id: 'responsable', type: 'Ref:Team' }, { id: 'actif', type: 'Bool' }],
             Tasks: [{ id: 'titre', type: 'Text' }, { id: 'description', type: 'Text' }, { id: 'dateDebut', type: 'Date' }, { id: 'dateEcheance', type: 'Date' }, { id: 'priorite', type: 'Choice' }, { id: 'statut', type: 'Choice' }, { id: 'progression', type: 'Numeric' }, { id: 'projet', type: 'Ref:Projects' }, { id: 'assignees', type: 'RefList:Team' }, { id: 'type', type: 'Choice' }, { id: 'dependDe', type: 'RefList:Tasks' }, { id: 'tags', type: 'ChoiceList' }, { id: 'estimationH', type: 'Numeric' }, { id: 'tempsPasse', type: 'Numeric' }, { id: 'couleur', type: 'Text' }]
         };
@@ -385,6 +409,7 @@
         const STATUS_CONFIG = { todo: 'À faire', inprogress: 'En cours', review: 'En revue', done: 'Terminé' };
         const TYPE_ICONS = { tache: '📋', jalon: '◆', reunion: '👥' };
         const MONTHS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+        const MONTHS_SHORT = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'];
         const DAYS = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
         const DAYS_FULL = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
 
@@ -394,18 +419,58 @@
         let tasks = [], team = [], projects = [], gristReady = false;
         let currentView = 'month', currentDate = new Date(), selectedDate = null, selectedTaskId = null;
         let panelState = { open: false, mode: null, periodType: null, periodDate: null, periodTasks: [], taskId: null, taskIndex: -1, isNew: false, editData: null };
-        let filters = { project: [], priority: [] };
+        let filters = { project: [], priority: [], assignee: [] };  // GEN-02: Ajout assignee pour compatibilité inter-widgets
         let saveTimeout = null;
 
         // ═══════════════════════════════════════════════════════════════════════
         // UTILITIES
         // ═══════════════════════════════════════════════════════════════════════
         const showToast = (m, t) => { const c = document.getElementById('toastContainer'); const e = document.createElement('div'); e.className = 'toast ' + (t || ''); e.textContent = m; c.appendChild(e); setTimeout(() => e.remove(), 3000); };
+        
+        // GEN-03: Export functions
+        function exportPrint() {
+            document.querySelectorAll('.filter-menu').forEach(m => m.classList.remove('open'));
+            setTimeout(() => window.print(), 100);
+        }
+        
+        async function exportPNG() {
+            document.querySelectorAll('.filter-menu').forEach(m => m.classList.remove('open'));
+            showToast('Préparation export...', 'info');
+            
+            if (!window.html2canvas) {
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+                document.head.appendChild(script);
+                await new Promise(resolve => script.onload = resolve);
+            }
+            
+            try {
+                const element = document.getElementById('gridContainer');
+                const canvas = await html2canvas(element, { backgroundColor: '#f8fafc', scale: 2, logging: false });
+                const link = document.createElement('a');
+                link.download = 'calendar-' + new Date().toISOString().split('T')[0] + '.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                showToast('Export PNG réussi', 'success');
+            } catch (e) {
+                console.error('Export error:', e);
+                showToast('Erreur export PNG', 'error');
+            }
+        }
         const showSaveIndicator = () => { const el = document.getElementById('saveIndicator'); el.classList.add('visible'); clearTimeout(saveTimeout); saveTimeout = setTimeout(() => el.classList.remove('visible'), 1500); };
         const escapeHtml = (t) => { if (!t) return ''; const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
 
         const gristToDate = (ts) => ts ? new Date(ts * 1000) : null;
         const dateToGrist = (d) => d ? Math.floor(d.getTime() / 1000) : null;
+        // BUG-01 FIX: Parsing robuste des dates depuis input type="date"
+        const parseInputDate = (str) => {
+            if (!str) return null;
+            const parts = str.split('-');
+            if (parts.length !== 3) return null;
+            const [y, m, d] = parts.map(Number);
+            if (!y || !m || !d || isNaN(y) || isNaN(m) || isNaN(d)) return null;
+            return new Date(y, m - 1, d, 12, 0, 0);
+        };
         const formatDate = (d, f='short') => { if (!d) return ''; if (f === 'short') return d.getDate() + ' ' + MONTHS[d.getMonth()].substring(0,3).toLowerCase(); if (f === 'full') return DAYS_FULL[d.getDay()] + ' ' + d.getDate() + ' ' + MONTHS[d.getMonth()].toLowerCase(); if (f === 'iso') return d.toISOString().split('T')[0]; return d.toLocaleDateString('fr-FR'); };
         const isSameDay = (a, b) => a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
         const isToday = (d) => isSameDay(d, new Date());
@@ -540,8 +605,14 @@
                 `<div class="filter-option" onclick="toggleFilterValue('priority', ${p})"><input type="checkbox" ${filters.priority.includes(p) ? 'checked' : ''}><span style="color:${PRIORITY_COLORS[p]}">●</span> ${PRIORITY_LABELS[p]}</div>`
             ).join('');
             
+            // GEN-02: Filtre par équipe
+            document.getElementById('filterAssigneeMenu').innerHTML = team.filter(m => m.actif !== false).map(m => 
+                `<div class="filter-option" onclick="toggleFilterValue('assignee', ${m.id})"><input type="checkbox" ${filters.assignee.includes(m.id) ? 'checked' : ''}>${escapeHtml(m.nom)}</div>`
+            ).join('') || '<div class="filter-option">Aucun membre</div>';
+            
             document.getElementById('filterProjectBtn').classList.toggle('has-filter', filters.project.length > 0);
             document.getElementById('filterPriorityBtn').classList.toggle('has-filter', filters.priority.length > 0);
+            document.getElementById('filterAssigneeBtn').classList.toggle('has-filter', filters.assignee.length > 0);
         }
         
         function toggleFilterValue(type, val) {
@@ -549,13 +620,23 @@
             const idx = arr.indexOf(val);
             if (idx === -1) arr.push(val); else arr.splice(idx, 1);
             updateFilterMenus();
+            broadcastFilters();  // GEN-02
             render();
+        }
+        
+        // GEN-02: Broadcast des filtres vers les autres widgets
+        function broadcastFilters() {
+            if (gristReady && typeof grist !== 'undefined' && grist.setOption) {
+                try { grist.setOption('filters', { project: filters.project, priority: filters.priority, assignee: filters.assignee }); } 
+                catch (e) { console.log('setOption not available'); }
+            }
         }
         
         function getFilteredTasks() {
             return tasks.filter(t => {
                 if (filters.project.length && !filters.project.includes(t.projet)) return false;
                 if (filters.priority.length && !filters.priority.includes(getPriority(t))) return false;
+                if (filters.assignee.length && !getAssignees(t).some(a => filters.assignee.includes(a))) return false;  // GEN-02
                 return true;
             });
         }
@@ -566,9 +647,11 @@
         function setView(v) {
             currentView = v;
             document.querySelectorAll('.view-controls .btn').forEach(b => b.classList.remove('active'));
-            document.getElementById('btn' + v.charAt(0).toUpperCase() + v.slice(1)).classList.add('active');
+            const btnId = 'btn' + v.charAt(0).toUpperCase() + v.slice(1);
+            const btn = document.getElementById(btnId);
+            if (btn) btn.classList.add('active');
             document.getElementById('monthGrid').style.display = v === 'month' ? 'flex' : 'none';
-            document.getElementById('weekGrid').style.display = v === 'week' ? 'flex' : 'none';
+            document.getElementById('weekGrid').style.display = (v === 'week' || v === 'biweek' || v === 'workweek') ? 'flex' : 'none';
             document.getElementById('yearGrid').style.display = v === 'year' ? 'grid' : 'none';
             render();
         }
@@ -576,6 +659,8 @@
         function navigate(dir) {
             if (currentView === 'month') currentDate.setMonth(currentDate.getMonth() + dir);
             else if (currentView === 'week') currentDate.setDate(currentDate.getDate() + dir * 7);
+            else if (currentView === 'biweek') currentDate.setDate(currentDate.getDate() + dir * 14);
+            else if (currentView === 'workweek') currentDate.setDate(currentDate.getDate() + dir * 7);
             else if (currentView === 'year') currentDate.setFullYear(currentDate.getFullYear() + dir);
             render();
         }
@@ -586,6 +671,8 @@
             let label = '';
             if (currentView === 'month') label = MONTHS[currentDate.getMonth()] + ' ' + currentDate.getFullYear();
             else if (currentView === 'week') { const ws = getWeekStart(currentDate); label = 'Sem. ' + getWeekNumber(ws) + ' - ' + MONTHS[ws.getMonth()].substring(0,3) + ' ' + ws.getFullYear(); }
+            else if (currentView === 'biweek') { const ws = getWeekStart(currentDate); const we = addDays(ws, 13); label = 'Sem. ' + getWeekNumber(ws) + '-' + getWeekNumber(we) + ' · ' + formatDate(ws, 'short') + ' - ' + formatDate(we, 'short'); }
+            else if (currentView === 'workweek') { const ws = getWeekStart(currentDate); const we = addDays(ws, 4); label = formatDate(ws, 'short') + ' - ' + formatDate(we, 'short') + ' ' + ws.getFullYear(); }
             else if (currentView === 'year') label = currentDate.getFullYear();
             document.getElementById('currentPeriod').textContent = label;
         }
@@ -597,6 +684,8 @@
             updatePeriodLabel();
             if (currentView === 'month') renderMonth();
             else if (currentView === 'week') renderWeek();
+            else if (currentView === 'biweek') renderBiweek();
+            else if (currentView === 'workweek') renderWorkweek();
             else if (currentView === 'year') renderYear();
         }
         
@@ -749,6 +838,84 @@
             grid.innerHTML = headerHtml + alldayHtml + timelineHtml;
         }
         
+        // CAL-01: Vue 2 semaines (14 jours)
+        function renderBiweek() {
+            const grid = document.getElementById('weekGrid');
+            const ft = getFilteredTasks();
+            const weekStart = getWeekStart(currentDate);
+            
+            let headerHtml = '<div class="week-header" style="grid-template-columns: 50px repeat(14, 1fr);"><div class="week-header-cell"></div>';
+            for (let d = 0; d < 14; d++) {
+                const date = addDays(weekStart, d);
+                const classes = ['week-header-cell', isWeekend(date) ? 'weekend' : '', isToday(date) ? 'today' : ''].filter(Boolean).join(' ');
+                headerHtml += `<div class="${classes}" style="font-size:0.65rem;"><div class="week-header-day">${DAYS[(d + 1) % 7].charAt(0)}</div><div class="week-header-date" onclick="openDayPanel(new Date(${date.getTime()}))">${date.getDate()}</div></div>`;
+            }
+            headerHtml += '</div>';
+            
+            let alldayHtml = '<div class="week-allday" style="grid-template-columns: 50px repeat(14, 1fr);"><div class="week-allday-label">Jour</div>';
+            for (let d = 0; d < 14; d++) {
+                const date = addDays(weekStart, d);
+                const dayTasks = ft.filter(t => {
+                    const s = gristToDate(t.dateDebut), e = gristToDate(t.dateEcheance) || s;
+                    return s && startOfDay(s) <= date && endOfDay(e || s) >= date;
+                });
+                alldayHtml += `<div class="week-allday-cell ${isWeekend(date) ? 'weekend' : ''}" onclick="openDayPanel(new Date(${date.getTime()}))">${dayTasks.slice(0, 2).map(t => `<div class="week-allday-event p${getPriority(t)}" style="font-size:0.6rem;padding:1px 3px;" onclick="event.stopPropagation();openTaskPanel(${t.id})">${escapeHtml(t.titre).substring(0,8)}${t.titre.length > 8 ? '...' : ''}</div>`).join('')}</div>`;
+            }
+            alldayHtml += '</div>';
+            
+            let timelineHtml = '<div class="week-timeline" style="grid-template-columns: 50px repeat(14, 1fr);"><div class="week-hours">';
+            for (let h = 0; h < 24; h++) timelineHtml += `<div class="week-hour-label">${String(h).padStart(2,'0')}:00</div>`;
+            timelineHtml += '</div>';
+            for (let d = 0; d < 14; d++) {
+                const date = addDays(weekStart, d);
+                timelineHtml += `<div class="week-day-column ${isWeekend(date) ? 'weekend' : ''}">`;
+                for (let h = 0; h < 24; h++) timelineHtml += `<div class="week-hour-slot" onclick="openDayPanel(new Date(${date.getTime()}))"></div>`;
+                timelineHtml += '</div>';
+            }
+            timelineHtml += '</div>';
+            
+            grid.innerHTML = headerHtml + alldayHtml + timelineHtml;
+        }
+        
+        // CAL-02: Vue 5 jours (semaine travaillée)
+        function renderWorkweek() {
+            const grid = document.getElementById('weekGrid');
+            const ft = getFilteredTasks();
+            const weekStart = getWeekStart(currentDate);
+            
+            let headerHtml = '<div class="week-header" style="grid-template-columns: 50px repeat(5, 1fr);"><div class="week-header-cell"></div>';
+            for (let d = 0; d < 5; d++) {
+                const date = addDays(weekStart, d);
+                const classes = ['week-header-cell', isToday(date) ? 'today' : ''].filter(Boolean).join(' ');
+                headerHtml += `<div class="${classes}"><div class="week-header-day">${DAYS_FULL[(d + 1) % 7]}</div><div class="week-header-date" onclick="openDayPanel(new Date(${date.getTime()}))">${date.getDate()} ${MONTHS_SHORT[date.getMonth()]}</div></div>`;
+            }
+            headerHtml += '</div>';
+            
+            let alldayHtml = '<div class="week-allday" style="grid-template-columns: 50px repeat(5, 1fr);"><div class="week-allday-label">Journée</div>';
+            for (let d = 0; d < 5; d++) {
+                const date = addDays(weekStart, d);
+                const dayTasks = ft.filter(t => {
+                    const s = gristToDate(t.dateDebut), e = gristToDate(t.dateEcheance) || s;
+                    return s && startOfDay(s) <= date && endOfDay(e || s) >= date;
+                });
+                alldayHtml += `<div class="week-allday-cell" onclick="openDayPanel(new Date(${date.getTime()}))">${dayTasks.slice(0, 4).map(t => `<div class="week-allday-event p${getPriority(t)}" onclick="event.stopPropagation();openTaskPanel(${t.id})">${escapeHtml(t.titre)}</div>`).join('')}</div>`;
+            }
+            alldayHtml += '</div>';
+            
+            let timelineHtml = '<div class="week-timeline" style="grid-template-columns: 50px repeat(5, 1fr);"><div class="week-hours">';
+            for (let h = 0; h < 24; h++) timelineHtml += `<div class="week-hour-label">${String(h).padStart(2,'0')}:00</div>`;
+            timelineHtml += '</div>';
+            for (let d = 0; d < 5; d++) {
+                const date = addDays(weekStart, d);
+                timelineHtml += `<div class="week-day-column">`;
+                for (let h = 0; h < 24; h++) timelineHtml += `<div class="week-hour-slot" onclick="openDayPanel(new Date(${date.getTime()}))"></div>`;
+                timelineHtml += '</div>';
+            }
+            timelineHtml += '</div>';
+            
+            grid.innerHTML = headerHtml + alldayHtml + timelineHtml;
+        }
+        
         function renderYear() {
             const grid = document.getElementById('yearGrid');
             const ft = getFilteredTasks();
@@ -872,6 +1039,28 @@
                 estimationH: task.estimationH || null,
                 tempsPasse: task.tempsPasse || null
             };
+        }
+        
+        // FIX: Synchroniser editData vers le task local dans tasks[]
+        function syncLocalTask() {
+            if (panelState.isNew || !panelState.taskId) return;
+            const task = tasks.find(t => t.id === panelState.taskId);
+            const data = panelState.editData;
+            if (!task || !data) return;
+            task.titre = data.titre;
+            task.description = data.description;
+            task.type = data.type;
+            task.priorite = data.priorite;
+            task.statut = data.statut;
+            task.progression = data.progression;
+            task.dateDebut = data.dateDebut;
+            task.dateEcheance = data.dateEcheance;
+            task.projet = data.projet;
+            task.assignees = ['L', ...data.assignees];
+            task.dependDe = ['L', ...data.dependDe];
+            task.tags = ['L', ...data.tags];
+            task.estimationH = data.estimationH;
+            task.tempsPasse = data.tempsPasse;
         }
         
         function backToPeriod() {
@@ -1155,9 +1344,9 @@
             const data = panelState.editData;
             if (!data) return;
             
-            // Convert date strings to Grist timestamps
+            // BUG-01 FIX: Convert date strings to Grist timestamps using robust parsing
             if (field === 'dateDebut' || field === 'dateEcheance') {
-                value = value ? dateToGrist(new Date(value)) : null;
+                value = value ? dateToGrist(parseInputDate(value)) : null;
             }
             
             data[field] = value;
@@ -1167,8 +1356,11 @@
                 data.dateEcheance = data.dateDebut;
             }
             
+            // FIX: Synchroniser le task local pour affichage immédiat
+            syncLocalTask();
+            
             // Visual fields requiring re-render
-            const visualFields = ['type', 'priorite', 'statut', 'projet'];
+            const visualFields = ['type', 'priorite', 'statut', 'projet', 'progression', 'dateDebut', 'dateEcheance'];
             if (visualFields.includes(field)) {
                 renderPanelTask();
                 if (!panelState.isNew) render();
@@ -1197,8 +1389,10 @@
             const idx = data.assignees.indexOf(id);
             if (idx === -1) data.assignees.push(id);
             else data.assignees.splice(idx, 1);
+            syncLocalTask();  // FIX
             if (!panelState.isNew && gristReady) saveTaskToGrist();
             renderPanelTask();
+            render();
         }
         
         function removeAssignee(id) {
@@ -1206,8 +1400,10 @@
             const idx = data.assignees.indexOf(id);
             if (idx !== -1) {
                 data.assignees.splice(idx, 1);
+                syncLocalTask();  // FIX
                 if (!panelState.isNew && gristReady) saveTaskToGrist();
                 renderPanelTask();
+                render();
             }
         }
         
@@ -1216,6 +1412,7 @@
             const idx = data.dependDe.indexOf(id);
             if (idx === -1) data.dependDe.push(id);
             else data.dependDe.splice(idx, 1);
+            syncLocalTask();  // FIX
             if (!panelState.isNew && gristReady) saveTaskToGrist();
             renderPanelTask();
         }
@@ -1225,6 +1422,7 @@
             const idx = data.dependDe.indexOf(id);
             if (idx !== -1) {
                 data.dependDe.splice(idx, 1);
+                syncLocalTask();  // FIX
                 if (!panelState.isNew && gristReady) saveTaskToGrist();
                 renderPanelTask();
             }
@@ -1238,11 +1436,13 @@
                 if (tag && !data.tags.includes(tag)) {
                     data.tags.push(tag);
                     e.target.value = '';
+                    syncLocalTask();  // FIX
                     if (!panelState.isNew && gristReady) saveTaskToGrist();
                     renderPanelTask();
                 }
             } else if (e.key === 'Backspace' && !e.target.value && data.tags.length) {
                 data.tags.pop();
+                syncLocalTask();  // FIX
                 if (!panelState.isNew && gristReady) saveTaskToGrist();
                 renderPanelTask();
             }
@@ -1253,6 +1453,7 @@
             const idx = data.tags.indexOf(tag);
             if (idx !== -1) {
                 data.tags.splice(idx, 1);
+                syncLocalTask();  // FIX
                 if (!panelState.isNew && gristReady) saveTaskToGrist();
                 renderPanelTask();
             }
@@ -1370,6 +1571,17 @@
                         render();
                     }
                 });
+                // GEN-02: Synchronisation des filtres inter-widgets
+                grist.onOptions((options, interaction) => {
+                    if (options?.filters && interaction?.source !== 'self') {
+                        const f = options.filters;
+                        filters.project = Array.isArray(f.project) ? f.project : [];
+                        filters.priority = Array.isArray(f.priority) ? f.priority : [];
+                        filters.assignee = Array.isArray(f.assignee) ? f.assignee : [];
+                        updateFilterMenus();
+                        render();
+                    }
+                });
             } catch (e) {
                 console.log('Grist unavailable, using demo');
                 useDemoMode();
@@ -1380,9 +1592,9 @@
             document.body.insertAdjacentHTML('beforeend', '<div class="demo-badge">Démo</div>');
             
             team = [
-                { id: 1, nom: 'Alice Martin', actif: true },
-                { id: 2, nom: 'Bob Durant', actif: true },
-                { id: 3, nom: 'Claire Bernard', actif: true }
+                { id: 1, nom: 'Alice Martin', actif: true, couleur: '#4f46e5' },
+                { id: 2, nom: 'Bob Durant', actif: true, couleur: '#10b981' },
+                { id: 3, nom: 'Claire Bernard', actif: true, couleur: '#f59e0b' }
             ];
             projects = [
                 { id: 1, nom: 'Refonte Portail', couleur: '#4f46e5', actif: true },
@@ -1414,6 +1626,13 @@
             }
             if (!e.target.closest('.multi-select')) {
                 document.querySelectorAll('.multi-select').forEach(s => s.classList.remove('open'));
+            }
+            // GEN-01: Désélection si clic en dehors d'un événement, du panel ou des contrôles
+            if (!e.target.closest('.event-bar, .panel, .toolbar, .filter-dropdown, .view-controls, .day-cell, .week-panel')) {
+                if (selectedTaskId !== null && !panelState.open) {
+                    selectedTaskId = null;
+                    render();
+                }
             }
         });
         
