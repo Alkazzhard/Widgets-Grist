@@ -1,0 +1,17 @@
+{
+  "name": "qgis2grist",
+  "version": "1.0.0",
+  "description": "Importateur QGIS → Grist : analyse les exports qgis2web et projets QGIS, crée le schéma de tables et importe les données géographiques",
+  "authors": [
+    {
+      "name": "nic01asfr",
+      "url": "https://github.com/nic01asfr"
+    }
+  ],
+  "grist": {
+    "widgetId": "qgis2grist",
+    "name": "QGIS → Grist Importer",
+    "accessLevel": "full",
+    "description": "Importez des couches QGIS (qgis2web .zip/.html, .qgz, QField) directement dans Grist avec création automatique du schéma"
+  }
+}

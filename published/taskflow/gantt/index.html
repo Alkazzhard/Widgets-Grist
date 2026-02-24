@@ -3,29 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gantt - TaskFlow v14</title>
+    <title>Gantt - TaskFlow v15</title>
     <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <style>
         :root {
-            --primary: #4f46e5; --primary-light: #e0e7ff; --primary-dark: #4338ca;
-            --success: #10b981; --warning: #f59e0b; --danger: #ef4444; --info: #3b82f6;
-            --bg: #f8fafc; --card-bg: #ffffff; --text: #1e293b; --text-muted: #64748b; --text-light: #94a3b8;
+            /* Primary */
+            --primary: #4f46e5; --primary-dark: #4338ca; --primary-light: #e0e7ff;
+            /* Semantic */
+            --success: #10b981; --success-light: #d1fae5;
+            --warning: #f59e0b; --warning-light: #fef3c7;
+            --danger: #ef4444; --danger-light: #fee2e2;
+            --info: #3b82f6; --info-light: #dbeafe;
+            /* Backgrounds */
+            --bg: #f8fafc; --card-bg: #ffffff;
+            /* Text */
+            --text: #1e293b; --text-muted: #64748b; --text-light: #94a3b8;
+            /* Borders */
             --border: #e2e8f0; --border-dark: #cbd5e1;
+            /* Shadows */
             --shadow: 0 1px 3px rgba(0,0,0,0.1); --shadow-lg: 0 10px 40px rgba(0,0,0,0.15);
+            /* Layout */
             --row-height: 44px; --task-list-width: 260px; --cell-width: 34px; --panel-width: 340px;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { height: 100%; overflow: hidden; }
-        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; }
 
         /* Header */
-        .header { background: var(--card-bg); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; flex-shrink: 0; }
+        .header { background: var(--card-bg); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-shrink: 0; }
         .header-left { display: flex; align-items: center; gap: 16px; }
-        .header h1 { font-size: 1.15rem; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 8px; }
+        .header h1 { font-size: 1.25rem; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
         .header-center { display: flex; align-items: center; gap: 8px; }
-        .header-right { display: flex; align-items: center; gap: 8px; }
-        .btn { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--card-bg); font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-size: 0.75rem; transition: all 0.15s; color: var(--text); }
+        .header-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .btn { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-bg); font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; transition: all 0.15s; color: var(--text); }
         .btn:hover { background: var(--bg); }
         .btn.active { background: var(--primary); color: white; border-color: var(--primary); }
         .btn.primary { background: var(--primary); color: white; border-color: var(--primary); }
@@ -37,20 +48,19 @@
         .current-period { font-weight: 600; font-size: 0.85rem; min-width: 140px; text-align: center; }
         .sort-selector select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 5px; font-size: 0.72rem; background: var(--card-bg); }
 
-        /* Filters */
-        .filter-bar { background: var(--card-bg); border-bottom: 1px solid var(--border); padding: 6px 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex-shrink: 0; }
+        /* Filters (integrated in header) */
         .filter-dropdown { position: relative; }
-        .filter-btn { display: flex; align-items: center; gap: 6px; padding: 4px 10px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 5px; cursor: pointer; font-size: 0.72rem; }
-        .filter-btn:hover { background: var(--bg); }
+        .filter-btn { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.75rem; white-space: nowrap; color: var(--text-muted); }
+        .filter-btn:hover { background: var(--bg); border-color: var(--border-dark); color: var(--text); }
         .filter-btn.active { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
-        .filter-menu { position: absolute; top: 100%; left: 0; margin-top: 4px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow-lg); min-width: 150px; z-index: 200; display: none; max-height: 250px; overflow-y: auto; }
+        .filter-menu { position: absolute; top: 100%; left: 0; margin-top: 4px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-lg); min-width: 160px; z-index: 200; display: none; max-height: 280px; overflow-y: auto; padding: 6px; }
         .filter-menu.open { display: block; }
-        .filter-option { padding: 7px 10px; cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; gap: 6px; }
+        .filter-option { padding: 6px 8px; cursor: pointer; font-size: 0.8rem; display: flex; align-items: center; gap: 6px; border-radius: 4px; }
         .filter-option:hover { background: var(--bg); }
         .filter-option.active { background: var(--primary-light); color: var(--primary); }
         .filter-option .dot { width: 8px; height: 8px; border-radius: 50%; }
-        .active-filters { display: flex; gap: 6px; }
-        .filter-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; background: var(--primary-light); color: var(--primary); border-radius: 10px; font-size: 0.68rem; font-weight: 500; }
+        .active-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+        .filter-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; background: var(--primary-light); color: var(--primary); border-radius: 12px; font-size: 0.7rem; font-weight: 500; }
         .filter-chip button { background: none; border: none; color: var(--primary); cursor: pointer; font-size: 0.8rem; padding: 0; margin-left: 2px; }
 
         /* Gantt Container */
@@ -61,6 +71,7 @@
         .gantt-header { display: flex; background: var(--card-bg); border-bottom: 1px solid var(--border); flex-shrink: 0; }
         .task-list-header { width: var(--task-list-width); min-width: var(--task-list-width); padding: 10px 12px; font-weight: 600; border-right: 1px solid var(--border); background: var(--bg); display: flex; align-items: center; justify-content: space-between; font-size: 0.8rem; }
         .timeline-header { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .timeline-header-scroll { display: flex; flex-direction: column; overflow-x: hidden; }
         .timeline-header-months { display: flex; background: var(--bg); border-bottom: 1px solid var(--border); }
         .month-cell { padding: 4px 0; text-align: center; font-size: 0.7rem; font-weight: 600; color: var(--text-muted); border-right: 1px solid var(--border); }
         .timeline-header-days { display: flex; }
@@ -88,6 +99,10 @@
         .task-meta { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
         .task-dates { font-size: 0.65rem; color: var(--text-muted); }
         .task-progress-badge { font-size: 0.6rem; color: var(--text-muted); background: var(--bg); padding: 1px 4px; border-radius: 3px; }
+        .task-avatars { display: flex; margin-left: auto; }
+        .task-avatar { width: 18px; height: 18px; border-radius: 50%; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-size: 0.5rem; font-weight: 600; margin-left: -4px; border: 1.5px solid var(--card-bg); }
+        .task-avatar:first-child { margin-left: 0; }
+        .task-avatar.more { background: var(--text-muted); }
 
         .timeline-scroll { flex: 1; overflow: auto; }
         .timeline-grid { position: relative; min-height: 100%; }
@@ -98,9 +113,9 @@
         .grid-cell.month-start { border-left: 1px solid var(--border); }
 
         /* Gantt Bars */
-        .gantt-bar { position: absolute; height: 24px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; padding: 0 8px; font-size: 0.7rem; font-weight: 500; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 10; transition: box-shadow 0.15s; }
-        .gantt-bar:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.25); z-index: 20; }
-        .gantt-bar.selected { outline: 2px solid var(--text); outline-offset: 2px; z-index: 25; }
+        .gantt-bar { position: absolute; height: 24px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; padding: 0 8px; font-size: 0.7rem; font-weight: 500; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 10; transition: all 0.15s; }
+        .gantt-bar:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 20; }
+        .gantt-bar.selected { outline: 2px solid var(--primary); outline-offset: 2px; z-index: 25; }
         .gantt-bar.p1 { background: linear-gradient(135deg, var(--danger), #f87171); }
         .gantt-bar.p2 { background: linear-gradient(135deg, var(--warning), #fbbf24); }
         .gantt-bar.p3 { background: linear-gradient(135deg, var(--info), #60a5fa); }
@@ -121,7 +136,7 @@
         .gantt-milestone.p2 .milestone-diamond { background: var(--warning); }
         .gantt-milestone.p3 .milestone-diamond { background: var(--info); }
         .gantt-milestone.p4 .milestone-diamond { background: var(--text-muted); }
-        .gantt-milestone.selected .milestone-diamond { outline: 2px solid var(--text); outline-offset: 2px; }
+        .gantt-milestone.selected .milestone-diamond { outline: 2px solid var(--primary); outline-offset: 2px; }
         .gantt-milestone:hover .milestone-diamond { transform: rotate(45deg) scale(1.15); }
         .milestone-label { font-size: 0.68rem; color: var(--text); white-space: nowrap; font-weight: 500; }
 
@@ -170,6 +185,11 @@
         .panel-btn.danger:hover { background: var(--danger); color: white; }
         .panel-section { margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
         .panel-section:last-child { border-bottom: none; }
+        .panel-section-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin: 0 -16px 12px -16px; background: linear-gradient(135deg, var(--bg) 0%, rgba(79,70,229,0.03) 100%); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+        .panel-section-header:first-child { border-top: none; margin-top: -4px; }
+        .panel-section-icon { font-size: 0.85rem; opacity: 0.7; }
+        .panel-section-title { font-size: 0.7rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .panel-section-badge { font-size: 0.65rem; padding: 2px 6px; background: var(--primary-light); color: var(--primary); border-radius: 10px; font-weight: 600; margin-left: auto; }
 
         /* Form Elements */
         .type-selector { display: flex; gap: 6px; margin-bottom: 16px; background: var(--bg); padding: 4px; border-radius: 8px; }
@@ -179,7 +199,7 @@
         .type-option-icon { display: block; font-size: 1rem; margin-bottom: 2px; }
         .form-group { margin-bottom: 14px; }
         .form-label { display: block; font-size: 0.7rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; }
-        .form-input, .form-select, .form-textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem; color: var(--text); background: var(--card-bg); }
+        .form-input, .form-select, .form-textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem; color: var(--text); background: var(--card-bg); transition: border-color 0.15s, box-shadow 0.15s; }
         .form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
         .form-input.title-input { font-size: 1rem; font-weight: 600; border: none; padding: 8px 0; background: transparent; border-bottom: 2px solid var(--border); border-radius: 0; }
         .form-input.title-input:focus { border-bottom-color: var(--primary); box-shadow: none; }
@@ -201,8 +221,12 @@
         .status-pill.selected { background: var(--primary); color: white; border-color: var(--primary); }
         .progress-container { display: flex; align-items: center; gap: 10px; }
         .progress-slider { flex: 1; -webkit-appearance: none; height: 6px; border-radius: 3px; background: var(--border); }
-        .progress-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--primary); cursor: pointer; }
+        .progress-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--primary); cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
         .progress-value { font-size: 0.85rem; font-weight: 600; color: var(--primary); min-width: 40px; text-align: right; }
+        .progress-presets { display: flex; gap: 6px; margin-top: 8px; }
+        .progress-preset { flex: 1; padding: 6px 4px; font-size: 0.7rem; font-weight: 600; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); cursor: pointer; transition: all 0.15s; text-align: center; }
+        .progress-preset:hover { background: var(--primary-light); border-color: var(--primary); }
+        .progress-preset.active { background: var(--primary); color: white; border-color: var(--primary); }
 
         /* Multi-select */
         .multi-select { position: relative; }
@@ -229,6 +253,34 @@
         .tag-chip .remove { cursor: pointer; color: var(--text-muted); }
         .tag-chip .remove:hover { color: var(--danger); }
         .tags-input input { border: none; outline: none; flex: 1; min-width: 60px; font-size: 0.8rem; padding: 3px 0; background: transparent; }
+
+        /* Dates inline */
+        .dates-inline { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--bg); border-radius: 8px; }
+        .dates-inline input { border: none; background: transparent; padding: 0; font-size: 0.85rem; color: var(--text); width: 120px; text-align: center; }
+        .dates-inline input:focus { outline: none; }
+        .dates-inline .dates-arrow { color: var(--text-muted); font-size: 0.85rem; }
+        .dates-inline .today-btn { padding: 4px 8px; font-size: 0.7rem; background: var(--primary-light); color: var(--primary); border: none; border-radius: 4px; cursor: pointer; margin-left: auto; transition: all 0.15s; }
+        .dates-inline .today-btn:hover { background: var(--primary); color: white; }
+
+        /* Project select with dot */
+        .project-select-wrap { display: flex; align-items: center; gap: 8px; }
+        .project-color-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+        .project-select-wrap .form-select { flex: 1; }
+
+        /* Subtasks/Checklist */
+        .subtask-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+        .subtask-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--bg); border-radius: 6px; border: 1px solid var(--border); }
+        .subtask-item.done { opacity: 0.6; }
+        .subtask-item.done .subtask-text { text-decoration: line-through; color: var(--text-muted); }
+        .subtask-checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary); }
+        .subtask-text { flex: 1; font-size: 0.85rem; }
+        .subtask-remove { width: 20px; height: 20px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; opacity: 0; transition: opacity 0.15s; border-radius: 4px; }
+        .subtask-item:hover .subtask-remove { opacity: 1; }
+        .subtask-remove:hover { background: var(--danger); color: white; }
+        .subtask-add { display: flex; gap: 6px; }
+        .subtask-add input { flex: 1; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.85rem; }
+        .subtask-add button { padding: 8px 12px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+        .subtask-add button:hover { background: var(--primary-dark); }
 
         /* Time */
         .time-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -273,19 +325,24 @@
         /* GEN-03: Export Print/PDF */
         @media print {
             body { background: white !important; }
-            .header, .filter-bar, .panel, .demo-badge, .filter-dropdown, .btn { display: none !important; }
+            .header, .panel, .demo-badge { display: none !important; }
             .gantt-wrapper { margin: 0 !important; height: auto !important; }
             .gantt-container { overflow: visible !important; }
             .task-list-scroll, .timeline-scroll { overflow: visible !important; height: auto !important; }
             .gantt-bar, .gantt-milestone { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
             @page { size: landscape; margin: 1cm; }
         }
+        /* Responsive pour header unifié */
+        @media (max-width: 1200px) {
+            .header { flex-wrap: wrap; }
+            .header-right { order: 3; width: 100%; justify-content: flex-end; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <div class="header-left">
-            <h1>📊 Gantt</h1>
+            <h1><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="15" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="12" y2="18"></line></svg> Gantt</h1>
             <div class="sort-selector">
                 <select id="sortSelect" onchange="changeSortMode(this.value)">
                     <option value="priority">Tri: Priorité</option>
@@ -297,6 +354,7 @@
         <div class="header-center">
             <button class="btn btn-nav" onclick="navigate(-1)">◀</button>
             <button class="btn" onclick="goToToday()">Aujourd'hui</button>
+            <button class="btn" onclick="fitToTasks()" title="Ajuster la vue aux tâches">Ajuster</button>
             <button class="btn btn-nav" onclick="navigate(1)">▶</button>
             <span class="current-period" id="currentPeriod"></span>
             <div class="view-controls">
@@ -308,36 +366,35 @@
             </div>
         </div>
         <div class="header-right">
+            <div class="filter-dropdown" id="filterProject">
+                <div class="filter-btn" onclick="toggleFilterMenu('filterProject')"><span id="filterProjectLabel">Projet ▾</span></div>
+                <div class="filter-menu" id="filterProjectMenu"></div>
+            </div>
+            <div class="filter-dropdown" id="filterAssignee">
+                <div class="filter-btn" onclick="toggleFilterMenu('filterAssignee')"><span id="filterAssigneeLabel">Assigné ▾</span></div>
+                <div class="filter-menu" id="filterAssigneeMenu"></div>
+            </div>
+            <div class="active-filters" id="activeFilters"></div>
             <div class="filter-dropdown" id="exportDropdown">
-                <button class="btn" onclick="toggleFilterMenu('exportDropdown')">📥 Exporter ▾</button>
+                <button class="btn" onclick="toggleFilterMenu('exportDropdown')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Exporter ▾</button>
                 <div class="filter-menu" id="exportDropdownMenu">
-                    <div class="filter-option" onclick="exportPrint()">🖨️ Imprimer / PDF</div>
-                    <div class="filter-option" onclick="exportPNG()">🖼️ Image PNG</div>
+                    <div class="filter-option" onclick="exportPrint()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg> Imprimer / PDF</div>
+                    <div class="filter-option" onclick="exportPNG()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg> Image PNG</div>
                 </div>
             </div>
             <button class="btn primary" onclick="openCreatePanel()">+ Tâche</button>
         </div>
     </div>
 
-    <div class="filter-bar">
-        <div class="filter-dropdown" id="filterProject">
-            <div class="filter-btn" onclick="toggleFilterMenu('filterProject')"><span id="filterProjectLabel">Projet ▾</span></div>
-            <div class="filter-menu" id="filterProjectMenu"></div>
-        </div>
-        <div class="filter-dropdown" id="filterAssignee">
-            <div class="filter-btn" onclick="toggleFilterMenu('filterAssignee')"><span id="filterAssigneeLabel">Assigné ▾</span></div>
-            <div class="filter-menu" id="filterAssigneeMenu"></div>
-        </div>
-        <div class="active-filters" id="activeFilters"></div>
-    </div>
-
     <div class="main-content">
         <div class="gantt-wrapper" id="ganttWrapper">
             <div class="gantt-header">
                 <div class="task-list-header"><span>Tâches</span><span id="taskCount" style="font-size:0.7rem;color:var(--text-muted);">0</span></div>
-                <div class="timeline-header">
-                    <div class="timeline-header-months" id="monthsHeader"></div>
-                    <div class="timeline-header-days" id="daysHeader"></div>
+                <div class="timeline-header" id="timelineHeader">
+                    <div class="timeline-header-scroll" id="timelineHeaderScroll">
+                        <div class="timeline-header-months" id="monthsHeader"></div>
+                        <div class="timeline-header-days" id="daysHeader"></div>
+                    </div>
                 </div>
             </div>
             <div class="gantt-body">
@@ -364,7 +421,7 @@
     </div>
 
     <div class="tooltip" id="tooltip"></div>
-    <div class="save-indicator" id="saveIndicator">✓ Enregistré</div>
+    <div class="save-indicator" id="saveIndicator">Enregistré</div>
     <div class="toast-container" id="toastContainer"></div>
 
     <script>
@@ -390,7 +447,7 @@
         ];
         const PRIORITY_COLORS = { 1: '#ef4444', 2: '#f59e0b', 3: '#3b82f6', 4: '#64748b' };
         const STATUS_LABELS = { todo: 'À faire', inprogress: 'En cours', review: 'En revue', done: 'Terminé' };
-        const TYPE_ICONS = { tache: '📋', jalon: '◆', reunion: '👥' };
+        const TYPE_ICONS = { tache: '', jalon: '◆', reunion: '' };
         const MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
         const MONTHS_SHORT = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
 
@@ -423,7 +480,7 @@
         const getDaysDiff = (a, b) => Math.round((b - a) / 86400000);
         const addDays = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
         const getTaskPriority = (t) => (t?.priorite >= 1 && t?.priorite <= 4) ? parseInt(t.priorite) : 3;
-        const isJalon = (t) => t?.type === 'jalon' || (gristToDate(t?.dateDebut)?.toDateString() === gristToDate(t?.dateEcheance)?.toDateString());
+        const isJalon = (t) => t?.type === 'jalon';
 
         function showToast(msg, type = 'info') { const c = document.getElementById('toastContainer'); const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg; c.appendChild(t); setTimeout(() => t.remove(), 3000); }
         
@@ -479,6 +536,7 @@
         const getProjectName = (id) => { const p = projects.find(x => x.id === id); return p?.nom || ''; };
         const getProjectColor = (id) => { const p = projects.find(x => x.id === id); return p?.couleur || '#64748b'; };
         const getTeamMemberName = (id) => { const m = team.find(x => x.id === id); return m?.nom || ''; };
+        const getTeamMemberColor = (id) => { const m = team.find(x => x.id === id); return m?.couleur || '#6366f1'; };
         const getInitials = (n) => n ? n.split(' ').map(x => x[0]).join('').toUpperCase().slice(0, 2) : '?';
 
         // Dependency cycle detection
@@ -590,6 +648,48 @@
             render();
         }
         function goToToday() { viewStartDate = new Date(); render(); }
+
+        function fitToTasks() {
+            const ft = getFilteredTasks();
+            if (ft.length === 0) { goToToday(); return; }
+
+            // Find min/max dates from tasks
+            let minDate = null, maxDate = null;
+            ft.forEach(t => {
+                const start = gristToDate(t.dateDebut);
+                const end = gristToDate(t.dateEcheance);
+                if (start && (!minDate || start < minDate)) minDate = start;
+                if (end && (!maxDate || end > maxDate)) maxDate = end;
+            });
+
+            if (!minDate || !maxDate) { goToToday(); return; }
+
+            // Add some padding (7 days before, 7 days after)
+            minDate = addDays(minDate, -7);
+            maxDate = addDays(maxDate, 7);
+
+            // Calculate span in days
+            const spanDays = getDaysDiff(minDate, maxDate);
+
+            // Choose best view based on span
+            if (spanDays <= 14) {
+                currentView = 'week';
+            } else if (spanDays <= 60) {
+                currentView = 'month';
+            } else if (spanDays <= 120) {
+                currentView = 'quarter';
+            } else if (spanDays <= 200) {
+                currentView = 'semester';
+            } else {
+                currentView = 'year';
+            }
+
+            viewStartDate = minDate;
+            localStorage.setItem('taskflow_gantt_view', currentView);
+            document.querySelectorAll('.view-controls .btn').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
+            document.documentElement.style.setProperty('--cell-width', VIEW_CONFIG[currentView].cellWidth + 'px');
+            render();
+        }
         function updatePeriodLabel() {
             const start = getViewStartDate();
             let text = '';
@@ -766,6 +866,8 @@
                 const jalon = isJalon(t);
                 const progress = t.progression || 0;
                 const selected = t.id === selectedTaskId;
+                const assignees = getAssigneesArray(t);
+                const avatarsHtml = assignees.length ? '<div class="task-avatars">' + assignees.slice(0, 2).map(id => '<div class="task-avatar" style="background:' + getTeamMemberColor(id) + '">' + getInitials(getTeamMemberName(id)) + '</div>').join('') + (assignees.length > 2 ? '<div class="task-avatar more">+' + (assignees.length - 2) + '</div>' : '') + '</div>' : '';
 
                 html += '<div class="task-row ' + (selected ? 'selected' : '') + '" data-id="' + t.id + '" onclick="openTaskPanel(' + t.id + ')">' +
                     '<span class="drag-handle">☰</span>' +
@@ -775,6 +877,7 @@
                         '<div class="task-meta">' +
                             '<span class="task-dates">' + formatDateShort(start) + ' → ' + formatDateShort(end) + '</span>' +
                             (!jalon ? '<span class="task-progress-badge">' + progress + '%</span>' : '') +
+                            avatarsHtml +
                         '</div>' +
                     '</div>' +
                 '</div>';
@@ -981,8 +1084,20 @@
         function syncScroll() {
             const taskList = document.getElementById('taskList');
             const timeline = document.getElementById('timelineScroll');
+            const monthsHeader = document.getElementById('monthsHeader');
+            const daysHeader = document.getElementById('daysHeader');
+
+            // Sync vertical scroll between task list and timeline
             taskList.onscroll = () => timeline.scrollTop = taskList.scrollTop;
-            timeline.onscroll = () => taskList.scrollTop = timeline.scrollTop;
+
+            // Sync both vertical and horizontal scroll
+            timeline.onscroll = () => {
+                taskList.scrollTop = timeline.scrollTop;
+                // Sync horizontal scroll with headers using transform
+                const scrollX = timeline.scrollLeft;
+                monthsHeader.style.transform = 'translateX(-' + scrollX + 'px)';
+                daysHeader.style.transform = 'translateX(-' + scrollX + 'px)';
+            };
         }
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -1029,7 +1144,7 @@
                     titre: '', description: '', type: 'tache', priorite: '3', statut: 'todo', progression: 0,
                     dateDebut: dateToGrist(today), dateEcheance: dateToGrist(addDays(today, 7)),
                     projet: projects.length > 0 ? projects[0].id : null,
-                    assignees: [], dependDe: [], tags: [], estimationH: null, tempsPasse: null
+                    assignees: [], dependDe: [], tags: [], estimationH: null, tempsPasse: null, subtasks: []
                 }
             };
             renderPanel();
@@ -1043,7 +1158,7 @@
                 priorite: String(task.priorite || '3'), statut: task.statut || 'todo', progression: task.progression || 0,
                 dateDebut: task.dateDebut, dateEcheance: task.dateEcheance, projet: task.projet || null,
                 assignees: getAssigneesArray(task), dependDe: getDependsOnArray(task), tags: getTagsArray(task),
-                estimationH: task.estimationH || null, tempsPasse: task.tempsPasse || null
+                estimationH: task.estimationH || null, tempsPasse: task.tempsPasse || null, subtasks: getSubtasks(task)
             };
         }
 
@@ -1086,18 +1201,19 @@
             if (!data) { closePanel(); return; }
 
             const canNavigate = panelState.taskList.length > 1 && !panelState.isNew;
-            const typeIcon = TYPE_ICONS[data.type] || '📋';
-            const titleText = panelState.isNew ? 'Nouvelle tâche' : (data.titre || 'Sans titre');
+            const navLabel = panelState.isNew ? 'Nouvelle tâche' : (panelState.taskList.length > 1 ? (panelState.taskIndex + 1) + '/' + panelState.taskList.length : '');
 
             header.innerHTML = '<div class="panel-nav">' +
                 '<button class="panel-nav-btn" onclick="navigatePanelTask(-1)" ' + (!canNavigate ? 'disabled' : '') + '>◀</button>' +
-                '<span class="panel-title"><span style="margin-right:6px">' + typeIcon + '</span>' + escapeHtml(titleText) + '</span>' +
+                (navLabel ? '<span class="panel-title">' + navLabel + '</span>' : '') +
                 '<button class="panel-nav-btn" onclick="navigatePanelTask(1)" ' + (!canNavigate ? 'disabled' : '') + '>▶</button>' +
             '</div><button class="panel-close" onclick="closePanel()">×</button>';
 
             const s = gristToDate(data.dateDebut);
             const e = gristToDate(data.dateEcheance);
-            const projectOptions = projects.filter(p => p.actif !== false).map(p => 
+            const currentProject = projects.find(p => p.id === data.projet);
+            const projectColor = currentProject?.couleur || '#94a3b8';
+            const projectOptions = projects.filter(p => p.actif !== false).map(p =>
                 '<option value="' + p.id + '" ' + (data.projet === p.id ? 'selected' : '') + '>' + escapeHtml(p.nom) + '</option>'
             ).join('');
 
@@ -1135,50 +1251,67 @@
             const passe = data.tempsPasse || 0;
             const timePercent = estim > 0 ? Math.min((passe / estim) * 100, 100) : 0;
             const timeOver = passe > estim && estim > 0;
+            const subtasksDone = (data.subtasks || []).filter(s => s.done).length;
+            const subtasksTotal = (data.subtasks || []).length;
 
-            content.innerHTML = 
+            content.innerHTML =
                 '<div class="type-selector">' +
-                    '<div class="type-option ' + (data.type === 'tache' ? 'selected' : '') + '" onclick="updateField(\'type\',\'tache\')"><span class="type-option-icon">📋</span>Tâche</div>' +
-                    '<div class="type-option ' + (data.type === 'jalon' ? 'selected' : '') + '" onclick="updateField(\'type\',\'jalon\')"><span class="type-option-icon">◆</span>Jalon</div>' +
-                    '<div class="type-option ' + (data.type === 'reunion' ? 'selected' : '') + '" onclick="updateField(\'type\',\'reunion\')"><span class="type-option-icon">👥</span>Réunion</div>' +
+                    '<div class="type-option ' + (data.type === 'tache' ? 'selected' : '') + '" onclick="updateField(\'type\',\'tache\')">Tâche</div>' +
+                    '<div class="type-option ' + (data.type === 'jalon' ? 'selected' : '') + '" onclick="updateField(\'type\',\'jalon\')">Jalon</div>' +
+                    '<div class="type-option ' + (data.type === 'reunion' ? 'selected' : '') + '" onclick="updateField(\'type\',\'reunion\')">Réunion</div>' +
                 '</div>' +
                 '<div class="form-group"><input type="text" class="form-input title-input" id="taskTitle" placeholder="Titre..." value="' + escapeHtml(data.titre) + '" oninput="updateField(\'titre\', this.value, true)"></div>' +
+
                 '<div class="panel-section">' +
-                    (data.type === 'jalon' ? 
-                        '<div class="form-group"><label class="form-label">Date</label><input type="date" class="form-input" value="' + formatDateISO(s) + '" onchange="updateField(\'dateDebut\', this.value); updateField(\'dateEcheance\', this.value)"></div>' : 
-                        '<div class="form-row"><div class="form-group"><label class="form-label">Début</label><input type="date" class="form-input" value="' + formatDateISO(s) + '" onchange="updateField(\'dateDebut\', this.value)"></div><div class="form-group"><label class="form-label">Fin</label><input type="date" class="form-input" value="' + formatDateISO(e) + '" onchange="updateField(\'dateEcheance\', this.value)"></div></div>') +
-                    '<div class="form-group"><label class="form-label">Projet</label><select class="form-select" onchange="updateField(\'projet\', parseInt(this.value) || null)"><option value="">Aucun</option>' + projectOptions + '</select></div>' +
+                    '<div class="panel-section-header"><span class="panel-section-title">Planification</span></div>' +
+                    (data.type === 'jalon' ?
+                        '<div class="form-group"><div class="dates-inline"><input type="date" value="' + formatDateISO(s) + '" onchange="updateField(\'dateDebut\', this.value); updateField(\'dateEcheance\', this.value)"><button class="today-btn" onclick="setTodayDate()">Aujourd\'hui</button></div></div>' :
+                        '<div class="form-group"><div class="dates-inline"><input type="date" value="' + formatDateISO(s) + '" onchange="updateField(\'dateDebut\', this.value)"><span class="dates-arrow">→</span><input type="date" value="' + formatDateISO(e) + '" onchange="updateField(\'dateEcheance\', this.value)"><button class="today-btn" onclick="setTodayDate()">Auj.</button></div></div>') +
+                    '<div class="form-group"><div class="project-select-wrap"><span class="project-color-dot" style="background:' + projectColor + '"></span><select class="form-select" onchange="updateField(\'projet\', parseInt(this.value) || null)"><option value="">Aucun projet</option>' + projectOptions + '</select></div></div>' +
                 '</div>' +
+
                 '<div class="panel-section">' +
-                    '<div class="form-group"><label class="form-label">Priorité</label><div class="priority-selector">' +
+                    '<div class="panel-section-header"><span class="panel-section-title">État</span></div>' +
+                    '<div class="form-group"><div class="priority-selector">' +
                         '<div class="priority-pill p1 ' + (data.priorite == '1' ? 'selected' : '') + '" onclick="updateField(\'priorite\',\'1\')">Critique</div>' +
                         '<div class="priority-pill p2 ' + (data.priorite == '2' ? 'selected' : '') + '" onclick="updateField(\'priorite\',\'2\')">Haute</div>' +
                         '<div class="priority-pill p3 ' + (data.priorite == '3' ? 'selected' : '') + '" onclick="updateField(\'priorite\',\'3\')">Moyenne</div>' +
                         '<div class="priority-pill p4 ' + (data.priorite == '4' ? 'selected' : '') + '" onclick="updateField(\'priorite\',\'4\')">Basse</div>' +
                     '</div></div>' +
-                    (data.type !== 'jalon' ? 
-                        '<div class="form-group"><label class="form-label">Statut</label><div class="status-selector">' +
+                    (data.type !== 'jalon' ?
+                        '<div class="form-group"><div class="status-selector">' +
                             '<div class="status-pill ' + (data.statut === 'todo' ? 'selected' : '') + '" onclick="updateField(\'statut\',\'todo\')">À faire</div>' +
                             '<div class="status-pill ' + (data.statut === 'inprogress' ? 'selected' : '') + '" onclick="updateField(\'statut\',\'inprogress\')">En cours</div>' +
                             '<div class="status-pill ' + (data.statut === 'review' ? 'selected' : '') + '" onclick="updateField(\'statut\',\'review\')">En revue</div>' +
                             '<div class="status-pill ' + (data.statut === 'done' ? 'selected' : '') + '" onclick="updateField(\'statut\',\'done\')">Terminé</div>' +
                         '</div></div>' +
-                        '<div class="form-group"><label class="form-label">Progression</label><div class="progress-container"><input type="range" class="progress-slider" min="0" max="100" value="' + data.progression + '" oninput="document.getElementById(\'progressValue\').textContent=this.value+\'%\'" onchange="updateField(\'progression\', parseInt(this.value))"><span class="progress-value" id="progressValue">' + data.progression + '%</span></div></div>' : '') +
+                        '<div class="form-group"><div class="progress-container"><input type="range" class="progress-slider" min="0" max="100" value="' + data.progression + '" oninput="document.getElementById(\'progressValue\').textContent=this.value+\'%\'" onchange="updateField(\'progression\', parseInt(this.value))"><span class="progress-value" id="progressValue">' + data.progression + '%</span></div><div class="progress-presets"><div class="progress-preset ' + (data.progression === 0 ? 'active' : '') + '" onclick="setProgressPreset(0)">0%</div><div class="progress-preset ' + (data.progression === 25 ? 'active' : '') + '" onclick="setProgressPreset(25)">25%</div><div class="progress-preset ' + (data.progression === 50 ? 'active' : '') + '" onclick="setProgressPreset(50)">50%</div><div class="progress-preset ' + (data.progression === 75 ? 'active' : '') + '" onclick="setProgressPreset(75)">75%</div><div class="progress-preset ' + (data.progression === 100 ? 'active' : '') + '" onclick="setProgressPreset(100)">100%</div></div></div>' : '') +
                 '</div>' +
+
                 '<div class="panel-section">' +
-                    '<div class="form-group"><label class="form-label">Assignés</label><div class="multi-select" id="assigneesSelect"><div class="multi-select-trigger" onclick="toggleMultiSelect(\'assigneesSelect\')"><div class="multi-select-values">' + (assigneesChips || '<span class="multi-select-placeholder">Sélectionner...</span>') + '</div><span class="multi-select-arrow">▾</span></div><div class="multi-select-dropdown">' + (assigneesOptions || '<div class="multi-select-empty">Aucun</div>') + '</div></div></div>' +
-                    '<div class="form-group"><label class="form-label">Dépend de</label><div class="multi-select" id="depsSelect"><div class="multi-select-trigger" onclick="toggleMultiSelect(\'depsSelect\')"><div class="multi-select-values">' + (depsChips || '<span class="multi-select-placeholder">Sélectionner...</span>') + '</div><span class="multi-select-arrow">▾</span></div><div class="multi-select-dropdown">' + (depsOptions || '<div class="multi-select-empty">Aucune</div>') + '</div></div>' + blockedHtml + '</div>' +
+                    '<div class="panel-section-header"><span class="panel-section-title">Équipe</span></div>' +
+                    '<div class="form-group"><div class="multi-select" id="assigneesSelect"><div class="multi-select-trigger" onclick="toggleMultiSelect(\'assigneesSelect\')"><div class="multi-select-values">' + (assigneesChips || '<span class="multi-select-placeholder">Assigner à...</span>') + '</div><span class="multi-select-arrow">▾</span></div><div class="multi-select-dropdown">' + (assigneesOptions || '<div class="multi-select-empty">Aucun membre</div>') + '</div></div></div>' +
+                    '<div class="form-group"><div class="multi-select" id="depsSelect"><div class="multi-select-trigger" onclick="toggleMultiSelect(\'depsSelect\')"><div class="multi-select-values">' + (depsChips || '<span class="multi-select-placeholder">Dépendances...</span>') + '</div><span class="multi-select-arrow">▾</span></div><div class="multi-select-dropdown">' + (depsOptions || '<div class="multi-select-empty">Aucune</div>') + '</div></div>' + blockedHtml + '</div>' +
                 '</div>' +
+
                 '<div class="panel-section">' +
-                    '<div class="form-group"><label class="form-label">Temps</label><div class="time-row"><div class="time-group"><label>Estimé</label><div class="time-input-wrap"><input type="number" min="0" step="0.5" value="' + (estim || '') + '" placeholder="0" onchange="updateField(\'estimationH\', parseFloat(this.value) || null)"><span>h</span></div></div><div class="time-group"><label>Passé</label><div class="time-input-wrap"><input type="number" min="0" step="0.5" value="' + (passe || '') + '" placeholder="0" onchange="updateField(\'tempsPasse\', parseFloat(this.value) || null)"><span>h</span></div></div></div>' + (estim > 0 ? '<div class="time-bar"><div class="time-bar-fill ' + (timeOver ? 'over' : '') + '" style="width:' + timePercent + '%"></div></div>' : '') + '</div>' +
-                    '<div class="form-group"><label class="form-label">Tags</label><div class="tags-input" onclick="document.getElementById(\'tagInput\').focus()">' + tagsChips + '<input type="text" id="tagInput" placeholder="' + (data.tags.length ? '' : 'Ajouter...') + '" onkeydown="handleTagKeydown(event)"></div></div>' +
+                    '<div class="panel-section-header"><span class="panel-section-title">Checklist</span>' + (subtasksTotal > 0 ? '<span class="panel-section-badge">' + subtasksDone + '/' + subtasksTotal + '</span>' : '') + '</div>' +
+                    '<div class="subtask-list">' + (data.subtasks || []).map(function(st) { return '<div class="subtask-item ' + (st.done ? 'done' : '') + '"><input type="checkbox" class="subtask-checkbox" ' + (st.done ? 'checked' : '') + ' onchange="toggleSubtask(' + st.id + ')"><span class="subtask-text">' + escapeHtml(st.text) + '</span><button class="subtask-remove" onclick="removeSubtask(' + st.id + ')">×</button></div>'; }).join('') + '</div>' +
+                    '<div class="subtask-add"><input type="text" id="newSubtaskInput" placeholder="Ajouter une sous-tâche..." onkeydown="handleSubtaskKeydown(event)"><button onclick="addSubtask()">+</button></div>' +
                 '</div>' +
-                '<div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" placeholder="Notes..." oninput="updateField(\'description\', this.value, true)">' + escapeHtml(data.description) + '</textarea></div>' +
-                (!panelState.isNew ? '<div id="deleteSection"><button class="panel-btn danger" onclick="showDeleteConfirm()">🗑️ Supprimer</button><div class="delete-confirm" id="deleteConfirm"><div class="delete-confirm-text">Supprimer ?</div><div class="delete-confirm-actions"><button class="delete-confirm-btn cancel" onclick="hideDeleteConfirm()">Annuler</button><button class="delete-confirm-btn confirm" onclick="confirmDelete()">Supprimer</button></div></div></div>' : '');
+
+                '<div class="panel-section">' +
+                    '<div class="panel-section-header"><span class="panel-section-title">Détails</span></div>' +
+                    '<div class="form-group"><div class="time-row"><div class="time-group"><label>Estimé</label><div class="time-input-wrap"><input type="number" min="0" step="0.5" value="' + (estim || '') + '" placeholder="0" onchange="updateField(\'estimationH\', parseFloat(this.value) || null)"><span>h</span></div></div><div class="time-group"><label>Passé</label><div class="time-input-wrap"><input type="number" min="0" step="0.5" value="' + (passe || '') + '" placeholder="0" onchange="updateField(\'tempsPasse\', parseFloat(this.value) || null)"><span>h</span></div></div></div>' + (estim > 0 ? '<div class="time-bar"><div class="time-bar-fill ' + (timeOver ? 'over' : '') + '" style="width:' + timePercent + '%"></div></div>' : '') + '</div>' +
+                    '<div class="form-group"><div class="tags-input" onclick="document.getElementById(\'tagInput\').focus()">' + tagsChips + '<input type="text" id="tagInput" placeholder="' + (data.tags.length ? '' : 'Ajouter un tag...') + '" onkeydown="handleTagKeydown(event)"></div></div>' +
+                    '<div class="form-group"><textarea class="form-textarea" placeholder="Notes et description..." oninput="updateField(\'description\', this.value, true)">' + escapeHtml(data.description) + '</textarea></div>' +
+                '</div>' +
+
+                (!panelState.isNew ? '<div class="panel-footer-left"><button class="panel-btn danger" onclick="showDeleteConfirm()" style="width:auto;padding:10px 14px">Suppr.</button></div><div class="delete-confirm" id="deleteConfirm"><div class="delete-confirm-text">Supprimer ?</div><div class="delete-confirm-actions"><button class="delete-confirm-btn cancel" onclick="hideDeleteConfirm()">Annuler</button><button class="delete-confirm-btn confirm" onclick="confirmDelete()">Supprimer</button></div></div>' : '');
 
             if (panelState.isNew) {
                 const canCreate = data.titre && data.titre.trim().length > 0;
-                footer.innerHTML = '<button class="panel-btn success" onclick="createTask()" ' + (!canCreate ? 'disabled' : '') + '>✓ Créer</button>';
+                footer.innerHTML = '<button class="panel-btn success" onclick="createTask()" ' + (!canCreate ? 'disabled' : '') + '>Créer</button>';
             } else {
                 footer.innerHTML = '';
             }
@@ -1216,6 +1349,93 @@
             }
 
             if (!panelState.isNew && !noSave && gristReady) saveTaskToGrist();
+        }
+
+        function setProgressPreset(value) {
+            const data = panelState.editData;
+            if (!data) return;
+            data.progression = value;
+            syncLocalTask();
+
+            const slider = document.querySelector('.progress-slider');
+            const valueSpan = document.getElementById('progressValue');
+            if (slider) slider.value = value;
+            if (valueSpan) valueSpan.textContent = value + '%';
+            document.querySelectorAll('.progress-preset').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.textContent) === value);
+            });
+            if (!panelState.isNew && gristReady) saveTaskToGrist();
+            render();
+        }
+
+        function setTodayDate() {
+            const data = panelState.editData;
+            if (!data) return;
+            const today = new Date();
+            today.setHours(12, 0, 0, 0);
+            data.dateDebut = dateToGrist(today);
+            if (data.type === 'jalon') data.dateEcheance = data.dateDebut;
+            syncLocalTask();
+            if (!panelState.isNew && gristReady) saveTaskToGrist();
+            renderPanel();
+            render();
+        }
+
+        // Subtasks/Checklist
+        function getSubtasks(task) {
+            if (!task?.subtasks) return [];
+            try { return JSON.parse(task.subtasks); } catch (e) { return []; }
+        }
+        function subtasksToJson(subtasks) {
+            return JSON.stringify(subtasks || []);
+        }
+        function addSubtask() {
+            const input = document.getElementById('newSubtaskInput');
+            const text = input?.value?.trim();
+            if (!text) return;
+            const data = panelState.editData;
+            if (!data.subtasks) data.subtasks = [];
+            data.subtasks.push({ id: Date.now(), text: text, done: false });
+            input.value = '';
+            updateSubtaskProgress();
+            if (!panelState.isNew && gristReady) saveTaskToGrist();
+            renderPanel();
+            render();
+        }
+        function toggleSubtask(id) {
+            const data = panelState.editData;
+            if (!data.subtasks) return;
+            const st = data.subtasks.find(s => s.id === id);
+            if (st) {
+                st.done = !st.done;
+                updateSubtaskProgress();
+                if (!panelState.isNew && gristReady) saveTaskToGrist();
+                renderPanel();
+                render();
+            }
+        }
+        function removeSubtask(id) {
+            const data = panelState.editData;
+            if (!data.subtasks) return;
+            const idx = data.subtasks.findIndex(s => s.id === id);
+            if (idx !== -1) {
+                data.subtasks.splice(idx, 1);
+                updateSubtaskProgress();
+                if (!panelState.isNew && gristReady) saveTaskToGrist();
+                renderPanel();
+                render();
+            }
+        }
+        function updateSubtaskProgress() {
+            const data = panelState.editData;
+            if (!data.subtasks || data.subtasks.length === 0) return;
+            const done = data.subtasks.filter(s => s.done).length;
+            const total = data.subtasks.length;
+            data.progression = Math.round((done / total) * 100);
+            syncLocalTask();
+        }
+        function handleSubtaskKeydown(e) {
+            if (e.key === 'Enter') { e.preventDefault(); addSubtask(); }
         }
 
         function toggleMultiSelect(id) {
@@ -1315,7 +1535,8 @@
                 titre: data.titre, description: data.description, type: data.type, priorite: data.priorite,
                 statut: data.statut, progression: data.progression, dateDebut: data.dateDebut, dateEcheance: data.dateEcheance,
                 projet: data.projet, assignees: toGristRefList(data.assignees), dependDe: toGristRefList(data.dependDe),
-                tags: toGristChoiceList(data.tags), estimationH: data.estimationH, tempsPasse: data.tempsPasse
+                tags: toGristChoiceList(data.tags), estimationH: data.estimationH, tempsPasse: data.tempsPasse,
+                subtasks: subtasksToJson(data.subtasks)
             };
 
             try {
@@ -1341,7 +1562,8 @@
                 priorite: data.priorite || '3', statut: data.statut || 'todo', progression: data.progression || 0,
                 dateDebut: data.dateDebut, dateEcheance: data.dateEcheance, projet: data.projet,
                 assignees: toGristRefList(data.assignees), dependDe: toGristRefList(data.dependDe),
-                tags: toGristChoiceList(data.tags), estimationH: data.estimationH, tempsPasse: data.tempsPasse
+                tags: toGristChoiceList(data.tags), estimationH: data.estimationH, tempsPasse: data.tempsPasse,
+                subtasks: subtasksToJson(data.subtasks)
             };
 
             if (gristReady) {
@@ -1551,7 +1773,7 @@
 
         async function initGrist() {
             try {
-                grist.ready({ requiredAccess: 'full' });
+                await grist.ready({ requiredAccess: 'full' });
                 await ensureSchema();
                 await loadAllData();
                 grist.onRecords(async () => await loadAllData());
@@ -1588,7 +1810,8 @@
             ];
             projects = [
                 { id: 1, nom: 'Refonte Portail', couleur: '#4f46e5', actif: true },
-                { id: 2, nom: 'App Mobile', couleur: '#10b981', actif: true }
+                { id: 2, nom: 'App Mobile', couleur: '#10b981', actif: true },
+                { id: 3, nom: 'API v2', couleur: '#f59e0b', actif: true }
             ];
 
             const today = new Date();
@@ -1596,13 +1819,15 @@
 
             tasks = [
                 { id: 1, titre: 'Analyse besoins', priorite: '1', projet: 1, dateDebut: day(-10), dateEcheance: day(-5), progression: 100, statut: 'done', type: 'tache', assignees: ['L', 1], tags: ['L', 'documentation'] },
-                { id: 2, titre: 'Dev Backend', priorite: '1', projet: 1, dateDebut: day(-4), dateEcheance: day(10), progression: 40, statut: 'inprogress', type: 'tache', dependDe: ['L', 1], assignees: ['L', 1, 2], estimationH: 32, tempsPasse: 12 },
-                { id: 3, titre: 'Mise en prod', type: 'jalon', priorite: '1', projet: 1, dateDebut: day(20), dateEcheance: day(20), progression: 0, statut: 'todo' },
-                { id: 4, titre: 'Design UI', priorite: '2', projet: 2, dateDebut: day(-5), dateEcheance: day(2), progression: 80, statut: 'review', type: 'tache', assignees: ['L', 3] },
-                { id: 5, titre: 'Dev Frontend', priorite: '2', projet: 2, dateDebut: day(0), dateEcheance: day(15), progression: 20, statut: 'inprogress', type: 'tache', dependDe: ['L', 4], assignees: ['L', 2] },
-                { id: 6, titre: 'Review finale', type: 'jalon', priorite: '2', projet: 2, dateDebut: day(18), dateEcheance: day(18), progression: 0, statut: 'todo', dependDe: ['L', 5] },
-                { id: 7, titre: 'Tests QA', priorite: '3', projet: 1, dateDebut: day(5), dateEcheance: day(12), progression: 0, statut: 'todo', type: 'tache', tags: ['L', 'qa', 'tests'] },
-                { id: 8, titre: 'Documentation', priorite: '4', projet: null, dateDebut: day(12), dateEcheance: day(20), progression: 0, statut: 'todo', type: 'tache', assignees: ['L', 3] }
+                { id: 2, titre: 'Dev Backend', priorite: '1', projet: 1, dateDebut: day(-4), dateEcheance: day(2), progression: 60, statut: 'inprogress', type: 'tache', dependDe: ['L', 1], assignees: ['L', 1, 2], estimationH: 32, tempsPasse: 12 },
+                { id: 3, titre: 'Design UI', priorite: '2', projet: 2, dateDebut: day(-5), dateEcheance: day(1), progression: 80, statut: 'review', type: 'tache', assignees: ['L', 3] },
+                { id: 4, titre: 'Livraison MVP', priorite: '1', projet: 1, dateDebut: day(15), dateEcheance: day(15), progression: 0, statut: 'todo', type: 'jalon', dependDe: ['L', 2], assignees: ['L', 1] },
+                { id: 5, titre: 'Tests QA', priorite: '3', projet: 2, dateDebut: day(5), dateEcheance: day(12), progression: 0, statut: 'todo', type: 'tache', assignees: ['L', 2], tags: ['L', 'qa', 'tests'] },
+                { id: 6, titre: 'Documentation', priorite: '4', projet: 3, dateDebut: day(-2), dateEcheance: day(-1), progression: 20, statut: 'inprogress', type: 'tache', assignees: ['L', 3] },
+                { id: 7, titre: 'Correction bugs', priorite: '2', projet: 1, dateDebut: day(0), dateEcheance: day(3), progression: 10, statut: 'inprogress', type: 'tache', assignees: ['L', 2] },
+                { id: 8, titre: 'Réunion client', priorite: '2', projet: 2, dateDebut: day(7), dateEcheance: day(7), progression: 0, statut: 'todo', type: 'reunion', assignees: ['L', 1, 3] },
+                { id: 9, titre: 'Migration DB', priorite: '1', projet: 3, dateDebut: day(-3), dateEcheance: day(0), progression: 90, statut: 'review', type: 'tache', assignees: ['L', 1] },
+                { id: 10, titre: 'Formation équipe', priorite: '3', projet: 1, dateDebut: day(10), dateEcheance: day(14), progression: 0, statut: 'todo', type: 'reunion', assignees: ['L', 2, 3] }
             ];
 
             sortTasks();

@@ -1,5 +1,21 @@
 [
   {
+    "widgetId": "qgis2grist",
+    "name": "QGIS → Grist Importer",
+    "url": "https://nic01asfr.github.io/Widgets-Grist/qgis2grist/",
+    "published": true,
+    "accessLevel": "full",
+    "renderAfterReady": true,
+    "description": "Importez des couches QGIS (qgis2web .zip/.html, .qgz, QField) directement dans Grist avec création automatique du schéma",
+    "lastUpdatedAt": "2026-02-24T08:10:30.149Z",
+    "authors": [
+      {
+        "name": "nic01asfr",
+        "url": "https://github.com/nic01asfr"
+      }
+    ]
+  },
+  {
     "widgetId": "taskflow-kanban",
     "name": "TaskFlow Kanban",
     "url": "https://nic01asfr.github.io/Widgets-Grist/taskflow/kanban/",
@@ -7,7 +23,7 @@
     "accessLevel": "full",
     "renderAfterReady": true,
     "description": "Tableau Kanban avec drag & drop pour la gestion de tâches",
-    "lastUpdatedAt": "2026-02-11T14:43:35.849Z",
+    "lastUpdatedAt": "2026-02-24T08:10:30.150Z",
     "authors": [
       {
         "name": "nic01asfr",
@@ -23,7 +39,7 @@
     "accessLevel": "full",
     "renderAfterReady": true,
     "description": "Diagramme de Gantt interactif pour la planification",
-    "lastUpdatedAt": "2026-02-11T14:43:35.850Z",
+    "lastUpdatedAt": "2026-02-24T08:10:30.150Z",
     "authors": [
       {
         "name": "nic01asfr",
@@ -39,7 +55,23 @@
     "accessLevel": "full",
     "renderAfterReady": true,
     "description": "Calendrier interactif avec vue mois/semaine/jour",
-    "lastUpdatedAt": "2026-02-11T14:43:35.850Z",
+    "lastUpdatedAt": "2026-02-24T08:10:30.150Z",
+    "authors": [
+      {
+        "name": "nic01asfr",
+        "url": "https://github.com/nic01asfr"
+      }
+    ]
+  },
+  {
+    "widgetId": "taskflow-dashboard",
+    "name": "TaskFlow Dashboard",
+    "url": "https://nic01asfr.github.io/Widgets-Grist/taskflow/dashboard/",
+    "published": true,
+    "accessLevel": "full",
+    "renderAfterReady": true,
+    "description": "Tableau de bord avec KPIs et statistiques des tâches",
+    "lastUpdatedAt": "2026-02-24T08:10:30.150Z",
     "authors": [
       {
         "name": "nic01asfr",

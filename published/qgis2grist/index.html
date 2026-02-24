@@ -1,0 +1,2089 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>QGIS → Grist Importer</title>
+
+<!-- Core deps -->
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+
+<style>
+:root {
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --surface2: #f1f5f9;
+  --surface3: #e2e8f0;
+  --border: #e2e8f0;
+  --primary: #0369a1;
+  --primary-dark: #0284c7;
+  --primary-dim: rgba(3,105,161,0.08);
+  --primary-glow: rgba(3,105,161,0.18);
+  --green: #10b981;
+  --orange: #ef4444;
+  --yellow: #f59e0b;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --text-dim: #94a3b8;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-lg: 0 10px 40px rgba(0,0,0,0.12);
+  --radius: 8px;
+  --font-mono: ui-monospace, 'SFMono-Regular', monospace;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+}
+
+/* ─── LAYOUT ─────────────────────────────────────────────── */
+#app { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+.header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.header .logo {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-sans); font-size: 1.1rem; font-weight: 700;
+  color: var(--primary);
+}
+.header .logo svg { flex-shrink: 0; }
+.header .badge {
+  margin-left: auto;
+  font-size: 0.65rem; font-family: var(--font-sans); font-weight: 600;
+  color: var(--text-dim); background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 2px 8px; letter-spacing: 0.06em; text-transform: uppercase;
+}
+
+.content { flex: 1; overflow: hidden; position: relative; }
+
+/* ─── STATES (show/hide) ─────────────────────────────────── */
+.state { position: absolute; inset: 0; display: none; }
+.state.active { display: flex; }
+
+/* ─── STATE: DROP ────────────────────────────────────────── */
+#state-drop {
+  align-items: center; justify-content: center; padding: 24px;
+}
+
+.drop-zone {
+  width: 100%; max-width: 560px;
+  border: 2px dashed var(--border);
+  border-radius: 16px;
+  padding: 40px 32px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.25s;
+  position: relative;
+  background: var(--surface);
+}
+.drop-zone::before {
+  content: '';
+  position: absolute; inset: -2px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--primary-dim), transparent 60%);
+  opacity: 0; transition: opacity 0.3s;
+  pointer-events: none;
+}
+.drop-zone:hover::before,
+.drop-zone.dragover::before { opacity: 1; }
+.drop-zone:hover,
+.drop-zone.dragover {
+  border-color: var(--primary);
+  box-shadow: 0 0 30px var(--primary-glow);
+}
+.drop-zone.dragover { transform: scale(1.01); }
+
+.drop-icon {
+  width: 72px; height: 72px; margin: 0 auto 20px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--primary-dim); border-radius: 50%;
+  animation: float 3s ease-in-out infinite;
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.drop-title {
+  font-size: 18px; font-weight: 600; color: var(--text);
+  margin-bottom: 8px;
+}
+.drop-sub {
+  font-size: 13px; color: var(--text-muted); line-height: 1.6;
+  margin-bottom: 24px;
+}
+.drop-formats {
+  display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+  margin-bottom: 24px;
+}
+.fmt-badge {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  padding: 4px 10px; border-radius: 6px; letter-spacing: 0.06em;
+}
+.fmt-badge.q2w { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.3); }
+.fmt-badge.qgz { background: rgba(3,105,161,0.08); color: var(--primary); border: 1px solid rgba(3,105,161,0.2); }
+.fmt-badge.qfd { background: rgba(227,179,65,0.15); color: var(--yellow); border: 1px solid rgba(227,179,65,0.3); }
+
+.drop-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 22px; font-size: 13px; font-weight: 600;
+  background: var(--primary); color: var(--bg);
+  border: none; border-radius: 8px; cursor: pointer;
+  transition: all 0.2s; font-family: var(--font-sans);
+}
+.drop-btn:hover { background: var(--primary-dark); transform: translateY(-1px); }
+
+.file-input { display: none; }
+
+/* ─── STATE: READING ─────────────────────────────────────── */
+#state-reading {
+  align-items: center; justify-content: center; flex-direction: column;
+  gap: 20px; padding: 24px;
+}
+.reading-spinner {
+  width: 48px; height: 48px; position: relative;
+}
+.reading-spinner::before, .reading-spinner::after {
+  content: ''; position: absolute; inset: 0;
+  border-radius: 50%;
+  border: 3px solid transparent;
+}
+.reading-spinner::before {
+  border-top-color: var(--primary);
+  animation: spin 0.8s linear infinite;
+}
+.reading-spinner::after {
+  border-bottom-color: rgba(3,105,161,0.2);
+  animation: spin 0.8s linear infinite reverse;
+  inset: 8px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.reading-label {
+  font-family: var(--font-mono); font-size: 13px;
+  color: var(--text-muted); text-align: center;
+}
+.reading-step {
+  font-size: 11px; color: var(--text-dim);
+  font-family: var(--font-mono); margin-top: 4px;
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ─── STATE: PREVIEW ─────────────────────────────────────── */
+#state-preview {
+  flex-direction: column; overflow: hidden;
+}
+.preview-toolbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; background: var(--surface);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.preview-title { font-weight: 600; color: var(--text); font-size: 13px; }
+.preview-meta { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+.preview-actions { margin-left: auto; display: flex; gap: 8px; }
+
+.preview-body { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+
+.layer-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.layer-card-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer; user-select: none;
+}
+.layer-card-head:hover { background: var(--surface2); }
+
+.geom-icon {
+  width: 28px; height: 28px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; flex-shrink: 0;
+}
+.geom-icon.point { background: rgba(3,105,161,0.1); color: var(--primary); }
+.geom-icon.line { background: rgba(63,185,80,0.12); color: var(--green); }
+.geom-icon.polygon { background: rgba(227,179,65,0.12); color: var(--yellow); }
+.geom-icon.unknown { background: var(--surface3); color: var(--text-dim); }
+
+.layer-name { font-weight: 600; font-size: 13px; flex: 1; }
+.layer-stats { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); text-align: right; }
+.layer-chevron { color: var(--text-dim); font-size: 11px; transition: transform 0.2s; }
+.layer-chevron.open { transform: rotate(90deg); }
+
+.layer-card-body { display: none; padding: 0 14px 14px; }
+.layer-card-body.open { display: block; }
+
+.field-table {
+  width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px;
+}
+.field-table th {
+  text-align: left; padding: 5px 8px;
+  color: var(--text-dim); font-weight: 600;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em;
+  border-bottom: 1px solid var(--border);
+}
+.field-table td {
+  padding: 5px 8px; border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+}
+.field-table tr:last-child td { border-bottom: none; }
+.field-table .col-type {
+  color: var(--primary); font-size: 11px;
+}
+.field-table .col-grist {
+  font-size: 10px; color: var(--text-muted);
+  background: var(--surface2); border-radius: 3px;
+  padding: 1px 5px; display: inline-block;
+}
+
+.layer-include {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 8px; padding: 8px 0; border-bottom: 1px solid var(--border);
+}
+.layer-include label { font-size: 12px; color: var(--text-muted); cursor: pointer; }
+.checkbox {
+  width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer;
+}
+
+/* ─── STATE: IMPORTING ───────────────────────────────────── */
+#state-importing {
+  flex-direction: column; align-items: center; justify-content: center;
+  gap: 16px; padding: 24px;
+}
+.import-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.import-sub { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
+
+.progress-list { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 10px; }
+
+.progress-item { }
+.progress-label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.progress-name { font-family: var(--font-mono); font-size: 12px; }
+.progress-pct { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.progress-bar-bg {
+  height: 4px; background: var(--surface2);
+  border-radius: 2px; overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%; background: var(--primary);
+  border-radius: 2px; width: 0%; transition: width 0.3s;
+}
+.progress-bar-fill.done { background: var(--green); }
+.progress-bar-fill.error { background: var(--orange); }
+
+/* ─── STATE: MAP ─────────────────────────────────────────── */
+#state-map { flex-direction: column; }
+.map-toolbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 16px; background: var(--surface);
+  border-bottom: 1px solid var(--border); flex-shrink: 0; height: 44px;
+}
+.map-toolbar .layer-toggle-list { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; overflow: hidden; }
+.map-layer-btn {
+  font-size: 11px; font-family: var(--font-mono);
+  padding: 3px 10px; border-radius: 4px; cursor: pointer;
+  border: 1px solid; background: transparent; transition: all 0.15s;
+}
+.map-layer-btn.active { opacity: 1; }
+.map-layer-btn:not(.active) { opacity: 0.4; }
+
+#leaflet-map { flex: 1; }
+
+/* ─── STATE: ERROR ───────────────────────────────────────── */
+#state-error {
+  align-items: center; justify-content: center; flex-direction: column;
+  gap: 12px; padding: 24px; text-align: center;
+}
+.error-icon { display: flex; align-items: center; justify-content: center; }
+.error-title { font-size: 16px; font-weight: 600; color: var(--orange); }
+.error-msg { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); max-width: 400px; }
+
+/* ─── BUTTONS ────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 16px; font-size: 12px; font-weight: 600;
+  border-radius: 6px; cursor: pointer; border: 1px solid;
+  font-family: var(--font-sans); transition: all 0.2s;
+  text-decoration: none; white-space: nowrap;
+}
+.btn-primary { background: var(--primary); color: var(--bg); border-color: var(--primary); }
+.btn-primary:hover { background: var(--primary-dark); border-color: var(--primary-dark); }
+.btn-secondary { background: transparent; color: var(--text-muted); border-color: var(--border); }
+.btn-secondary:hover { color: var(--text); border-color: var(--text-muted); background: var(--surface2); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ─── TOAST ──────────────────────────────────────────────── */
+#toast {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: var(--surface2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 20px; font-size: 13px; font-weight: 500;
+  box-shadow: var(--shadow-lg); z-index: 9999;
+  transition: opacity 0.3s; opacity: 0; pointer-events: none;
+}
+#toast.show { opacity: 1; }
+#toast.success { border-color: var(--green); color: var(--green); }
+#toast.error { border-color: var(--orange); color: var(--orange); }
+
+
+
+/* ─── RESTORE BANNER ─────────────────────────────────────── */
+.restore-banner {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.06);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; z-index: 1000;
+  gap: 12px;
+}
+.rb-info { display: flex; align-items: center; gap: 10px; }
+.rb-icon { font-size: 18px; color: var(--primary); }
+.rb-title { font-size: 12px; font-family: var(--font-mono); color: var(--text); }
+.rb-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.rb-upload-label {
+  font-size: 11px; padding: 6px 14px; border-radius: 4px; cursor: pointer;
+  background: rgba(3,105,161,0.08); border: 1px solid var(--primary);
+  color: var(--primary); font-weight: 600; white-space: nowrap;
+  transition: background 0.15s; font-family: var(--font-sans);
+}
+.rb-upload-label:hover { background: rgba(3,105,161,0.15); }
+
+/* ─── STATE: ORIGINAL MAP ────────────────────────────────── */
+#state-original { flex-direction: column; }
+.orig-toolbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 16px; background: var(--surface);
+  border-bottom: 1px solid var(--border); flex-shrink: 0; height: 44px;
+}
+.orig-toolbar .orig-title { font-size: 12px; font-family: var(--font-mono); color: var(--text-muted); flex: 1; }
+#orig-iframe { flex: 1; border: none; background: white; }
+
+/* ─── STORAGE BANNER ─────────────────────────────────────── */
+.storage-banner {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: var(--surface2); border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 16px; z-index: 100; font-size: 12px;
+}
+.storage-banner .sb-label { color: var(--text-muted); flex: 1; font-family: var(--font-mono); }
+.storage-banner .sb-date { color: var(--text-dim); font-size: 11px; }
+
+/* ─── MAP TOOLBAR extras ─────────────────────────────────── */
+.map-toolbar .map-btn-orig {
+  font-size: 11px; padding: 4px 12px; border-radius: 4px;
+  background: rgba(3,105,161,0.06); border: 1px solid var(--primary);
+  color: var(--primary); cursor: pointer; font-family: var(--font-sans);
+  font-weight: 600; white-space: nowrap; transition: all 0.15s;
+}
+.map-toolbar .map-btn-orig:hover { background: rgba(3,105,161,0.15); }
+.map-toolbar .map-btn-orig:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ─── SCROLLBAR ──────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--surface); }
+::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border); }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- HEADER -->
+  <div class="header">
+    <div class="logo">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+        <polyline points="2 17 12 22 22 17"/>
+        <polyline points="2 12 12 17 22 12"/>
+      </svg>
+      Qgis2Grist
+    </div>
+    <div id="header-file" style="font-size:0.75rem;color:var(--text-muted);"></div>
+    <div class="badge">IMPORTER</div>
+  </div>
+
+  <!-- CONTENT -->
+  <div class="content">
+
+    <!-- STATE: DROP -->
+    <div id="state-drop" class="state active">
+      <div class="drop-zone" id="drop-zone">
+        <div class="drop-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <div class="drop-title">Déposer un fichier QGIS</div>
+        <div class="drop-sub">
+          Glissez-déposez un export <strong>qgis2web</strong> ou un projet <strong>QGIS</strong>.
+          Le widget analyse les couches, crée le schéma de tables Grist et peuple les données.
+        </div>
+        <div class="drop-formats">
+          <span class="fmt-badge q2w">qgis2web .zip</span>
+          <span class="fmt-badge q2w">qgis2web .html</span>
+          <span class="fmt-badge qgz">.qgz normal</span>
+          <span class="fmt-badge qfd">.qgz QField</span>
+        </div>
+        <label class="drop-btn" for="file-input">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Choisir un fichier
+        </label>
+        <input type="file" id="file-input" class="file-input" accept=".zip,.html,.htm,.qgz">
+      </div>
+    </div>
+
+    <!-- STATE: READING -->
+    <div id="state-reading" class="state">
+      <div class="reading-spinner"></div>
+      <div>
+        <div class="reading-label" id="reading-label">Lecture du fichier…</div>
+        <div class="reading-step" id="reading-step">initialisation</div>
+      </div>
+    </div>
+
+    <!-- STATE: PREVIEW -->
+    <div id="state-preview" class="state">
+      <div class="preview-toolbar">
+        <div>
+          <div class="preview-title" id="preview-title">Couches détectées</div>
+          <div class="preview-meta" id="preview-meta"></div>
+        </div>
+        <div class="preview-actions">
+          <button class="btn btn-secondary" onclick="resetToIdleState()">← Nouveau fichier</button>
+          <button class="btn btn-primary" id="import-btn" onclick="startImport()">
+            ⬆ Importer dans Grist
+          </button>
+        </div>
+      </div>
+      <div class="preview-body" id="preview-body"></div>
+    </div>
+
+    <!-- STATE: IMPORTING -->
+    <div id="state-importing" class="state">
+      <div class="import-title">Import en cours…</div>
+      <div class="import-sub" id="import-sub">Création des tables Grist</div>
+      <div class="progress-list" id="progress-list"></div>
+    </div>
+
+    <!-- STATE: MAP -->
+    <div id="state-map" class="state">
+      <div class="map-toolbar">
+        <div class="layer-toggle-list" id="layer-toggles"></div>
+        <button class="btn btn-secondary" onclick="resetToIdleState()">← Nouveau fichier</button>
+      </div>
+      <div id="leaflet-map"></div>
+    </div>
+
+
+    <!-- STATE: ORIGINAL MAP (embedded HTML) -->
+    <div id="state-original" class="state">
+      <div class="orig-toolbar">
+        <span class="orig-title" id="orig-filename"></span>
+        <button class="btn btn-secondary" onclick="showMap(_currentImportedData)">← Carte Grist</button>
+        <button class="btn btn-secondary" onclick="resetToIdleState()">Nouveau fichier</button>
+      </div>
+      <iframe id="orig-iframe" sandbox="allow-scripts allow-same-origin"></iframe>
+    </div>
+
+    <!-- STATE: ERROR -->
+    <div id="state-error" class="state">
+      <div class="error-icon">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      </div>
+      <div class="error-title">Erreur de lecture</div>
+      <div class="error-msg" id="error-msg"></div>
+      <button class="btn btn-secondary" onclick="resetToIdleState()">← Réessayer</button>
+    </div>
+
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// STATE MACHINE
+// ══════════════════════════════════════════════════════════════
+const STATES = ['drop','reading','preview','importing','map','original','error'];
+let currentState = 'drop';
+
+function setState(name) {
+  currentState = name;
+  STATES.forEach(s => {
+    const el = document.getElementById('state-' + s);
+    if (el) el.classList.toggle('active', s === name);
+  });
+}
+
+function resetToIdleState() {
+  parsedLayers = [];
+  fileInfo = null;
+  originalHtml = null;
+  document.getElementById('header-file').textContent = '';
+  if (leafletMap) {
+    leafletMap.remove();
+    leafletMap = null;
+    leafletLayers = {};
+  }
+  // Clear persisted state
+  try { window.storage.delete('qgis_import_state'); } catch(e) {}
+  setState('drop');
+}
+
+// ══════════════════════════════════════════════════════════════
+// GLOBAL DATA
+// ══════════════════════════════════════════════════════════════
+let parsedLayers = [];   // [{name, geomType, fields:[{name,qType,gType}], features:[]}]
+let originalHtml = null;  // raw HTML of the source file (for embedded viewer)
+let fileInfo = null;     // {name, type, size}
+let leafletMap = null;
+let leafletLayers = {};
+
+// ══════════════════════════════════════════════════════════════
+// DROP ZONE SETUP
+// ══════════════════════════════════════════════════════════════
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+fileInput.addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (f) handleFile(f);
+  fileInput.value = '';
+});
+
+// ══════════════════════════════════════════════════════════════
+// MAIN FILE HANDLER
+// ══════════════════════════════════════════════════════════════
+async function handleFile(file) {
+  fileInfo = { name: file.name, size: file.size, type: file.type };
+  document.getElementById('header-file').textContent = file.name;
+  setState('reading');
+  setReadingLabel('Détection du format…', file.name);
+
+  try {
+    const ext = file.name.split('.').pop().toLowerCase();
+    let layers = [];
+
+    if (ext === 'html' || ext === 'htm') {
+      setReadingLabel('Lecture HTML qgis2web…', 'extraction des couches');
+      const text = await file.text();
+      originalHtml = text;  // keep for embedded viewer
+      layers = await parseQgis2webHtml(text);
+    } else if (ext === 'zip') {
+      // Could be qgis2web ZIP, QField ZIP, or normal ZIP with QGZ
+      setReadingLabel('Lecture de l\'archive ZIP…', 'décompression');
+      const ab = await file.arrayBuffer();
+      layers = await parseZipFile(ab, file.name);
+    } else if (ext === 'qgz') {
+      setReadingLabel('Lecture du projet QGIS…', 'décompression QGZ');
+      const ab = await file.arrayBuffer();
+      layers = await parseQgzFile(ab, null, file.name);
+    } else {
+      throw new Error(`Format non reconnu: .${ext}. Formats supportés: .zip, .html, .qgz`);
+    }
+
+    if (!layers || layers.length === 0) {
+      throw new Error('Aucune couche vecteur trouvée dans ce fichier. Vérifiez que le fichier contient des données géographiques.');
+    }
+
+    parsedLayers = layers;
+    showPreview(layers, file.name);
+
+  } catch (err) {
+    console.error(err);
+    document.getElementById('error-msg').textContent = err.message || String(err);
+    setState('error');
+  }
+}
+
+function setReadingLabel(label, step) {
+  document.getElementById('reading-label').textContent = label;
+  document.getElementById('reading-step').textContent = step;
+}
+
+// ══════════════════════════════════════════════════════════════
+// PARSER: ZIP dispatcher
+// ══════════════════════════════════════════════════════════════
+async function parseZipFile(arrayBuffer, zipName) {
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const names = Object.keys(zip.files);
+
+  // Detection heuristics
+  const hasQgs = names.some(n => n.endsWith('.qgs') || n.endsWith('.qgz'));
+  const hasIndexHtml = names.some(n => n.endsWith('index.html'));
+  const hasLayersJs = names.some(n => n.includes('layers') && n.endsWith('.js'));
+  const hasLayersDir = names.some(n => n.includes('/layers/') || n.startsWith('layers/'));
+
+  if (hasIndexHtml || hasLayersJs || hasLayersDir) {
+    // qgis2web ZIP
+    setReadingLabel('Format qgis2web détecté…', 'extraction des couches Leaflet');
+    return parseQgis2webZip(zip);
+  } else if (hasQgs) {
+    // QField package or nested QGZ
+    setReadingLabel('Paquet QField détecté…', 'recherche du projet QGZ');
+    // Find .qgz file inside
+    const qgzEntry = names.find(n => n.endsWith('.qgz'));
+    if (qgzEntry) {
+      const qgzAb = await zip.files[qgzEntry].async('arraybuffer');
+      return parseQgzFile(qgzAb, zip, qgzEntry);
+    }
+    // Find .qgs directly
+    const qgsEntry = names.find(n => n.endsWith('.qgs'));
+    if (qgsEntry) {
+      const qgsText = await zip.files[qgsEntry].async('string');
+      return parseQgsXml(qgsText, zip);
+    }
+    throw new Error('Paquet QField trouvé mais pas de fichier .qgz/.qgs lisible.');
+  } else {
+    // Check if any GeoJSON files
+    const geojsonFiles = names.filter(n => n.endsWith('.geojson') || n.endsWith('.json'));
+    if (geojsonFiles.length > 0) {
+      setReadingLabel('Fichiers GeoJSON détectés…', 'chargement des features');
+      return parseGeojsonFiles(zip, geojsonFiles);
+    }
+    throw new Error('Contenu du ZIP non reconnu. Attendu: export qgis2web, paquet QField ou fichiers GeoJSON.');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// PARSER: qgis2web HTML (standalone or from ZIP)
+// ══════════════════════════════════════════════════════════════
+async function parseQgis2webHtml(html) {
+  const layers = [];
+  const seenFP = new Set();
+
+  // Scan ALL "FeatureCollection" occurrences regardless of variable name.
+  // Works for: qgis2web (json_* vars), BigQgisMCP flood/temporal maps (FLOOD_JSON etc.)
+  let searchFrom = 0;
+  const MARKER = '"FeatureCollection"';
+
+  while (true) {
+    const markerPos = html.indexOf(MARKER, searchFrom);
+    if (markerPos < 0) break;
+    searchFrom = markerPos + MARKER.length;
+
+    // Walk backwards to find the enclosing '{'
+    let openBrace = markerPos;
+    while (openBrace > 0 && html[openBrace] !== '{') openBrace--;
+    if (openBrace <= 0) continue;
+
+    const sub = html.slice(openBrace);
+    const endIdx = findMatchingBrace(sub);
+    if (endIdx < 0 || endIdx < 100) continue;
+
+    let geojson;
+    try { geojson = JSON.parse(sub.slice(0, endIdx + 1)); } catch(e) { continue; }
+    if (!geojson || geojson.type !== 'FeatureCollection') continue;
+    const features = Array.isArray(geojson.features) ? geojson.features : [];
+    if (features.length === 0) continue;
+
+    // Fingerprint: property keys + count to deduplicate same data across re-uses
+    const fp = Object.keys(features[0]?.properties || {}).sort().join(',') + '|' + features.length;
+    if (seenFP.has(fp)) { searchFrom = openBrace + endIdx + 1; continue; }
+    seenFP.add(fp);
+
+    // Try to find variable name in the 120 chars before the opening brace
+    const lookback = html.slice(Math.max(0, openBrace - 120), openBrace);
+    const varMatch = lookback.match(/([A-Za-z][A-Za-z0-9_]*)\s*=\s*$/);
+    const rawVarName = varMatch ? varMatch[1] : null;
+    const layerName = rawVarName ? deriveLayerNameFromVar(rawVarName) : ('Couche ' + (layers.length + 1));
+    const layer = buildLayerFromGeojson(layerName, geojson);
+    layer.varName = rawVarName; // original JS variable name → needed for Grist adaptation
+    layers.push(layer);
+    searchFrom = openBrace + endIdx + 1;
+  }
+
+  return layers;
+}
+
+function deriveLayerNameFromVar(varName) {
+  // json_Layer_Name_0 → "Layer Name"
+  // FLOOD_JSON → "Flood"   BUILDINGS_JSON → "Buildings"
+  let name = varName
+    .replace(/^json_/i, '')   // qgis2web prefix
+    .replace(/_JSON$/i, '')   // BigQgisMCP suffix
+    .replace(/_Data$/i, '')   // common suffix
+    .replace(/_\d+$/, '')    // trailing index
+    .replace(/_/g, ' ')
+    .trim();
+  // Title-case
+  return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase() || varName;
+}
+
+function extractInlineFeatureCollections(html) {
+  const layers = [];
+  // Find JSON objects that look like FeatureCollections
+  const start = html.indexOf('"FeatureCollection"');
+  if (start < 0) return layers;
+  // Simplified: try to find start of containing object
+  let openIdx = start;
+  while (openIdx > 0 && html[openIdx] !== '{') openIdx--;
+  try {
+    // Try to find matching close
+    const sub = html.slice(openIdx);
+    const endIdx = findMatchingBrace(sub);
+    if (endIdx > 0) {
+      const obj = JSON.parse(sub.slice(0, endIdx + 1));
+      if (obj.type === 'FeatureCollection') {
+        layers.push(buildLayerFromGeojson('Couche', obj));
+      }
+    }
+  } catch(e) {}
+  return layers;
+}
+
+function findMatchingBrace(str) {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < str.length; i++) {
+    const c = str[i];
+    if (escape) { escape = false; continue; }
+    if (c === '\\' && inString) { escape = true; continue; }
+    if (c === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; if (depth === 0) return i; }
+  }
+  return -1;
+}
+
+// ══════════════════════════════════════════════════════════════
+// PARSER: qgis2web ZIP
+// ══════════════════════════════════════════════════════════════
+async function parseQgis2webZip(zip) {
+  const names = Object.keys(zip.files);
+  const layers = [];
+
+  // Look for layers JS files (layers/layers.js or layers_xyz.js)
+  const layerJsFiles = names.filter(n => /layers.*\.js$/i.test(n) || /\blayers\b.*\.js$/i.test(n));
+  // Also check for individual GeoJSON
+  const geojsonFiles = names.filter(n => n.endsWith('.geojson'));
+
+  // Read layer JS files
+  for (const fn of layerJsFiles) {
+    setReadingLabel('Lecture des couches…', fn.split('/').pop());
+    const content = await zip.files[fn].async('string');
+    const htmlLayers = await parseQgis2webHtml(content);
+    // Avoid duplicates
+    for (const l of htmlLayers) {
+      if (!layers.find(x => x.name === l.name)) layers.push(l);
+    }
+  }
+
+  // Individual GeoJSON files
+  if (geojsonFiles.length > 0) {
+    const geojsonLayers = await parseGeojsonFiles(zip, geojsonFiles);
+    for (const l of geojsonLayers) {
+      if (!layers.find(x => x.name === l.name)) layers.push(l);
+    }
+  }
+
+  // Fallback: read index.html
+  if (layers.length === 0) {
+    const indexEntry = names.find(n => n.endsWith('index.html'));
+    if (indexEntry) {
+      const html = await zip.files[indexEntry].async('string');
+      const htmlLayers = await parseQgis2webHtml(html);
+      layers.push(...htmlLayers);
+    }
+  }
+
+  return layers;
+}
+
+// ══════════════════════════════════════════════════════════════
+// PARSER: GeoJSON files in ZIP
+// ══════════════════════════════════════════════════════════════
+async function parseGeojsonFiles(zip, fileNames) {
+  const layers = [];
+  for (const fn of fileNames) {
+    setReadingLabel('Lecture GeoJSON…', fn.split('/').pop());
+    const content = await zip.files[fn].async('string');
+    try {
+      const geojson = JSON.parse(content);
+      if (geojson.type === 'FeatureCollection') {
+        const name = fn.split('/').pop().replace(/\.(geojson|json)$/i, '').replace(/_/g, ' ');
+        layers.push(buildLayerFromGeojson(name, geojson));
+      }
+    } catch(e) { /* malformed json */ }
+  }
+  return layers;
+}
+
+// ══════════════════════════════════════════════════════════════
+// PARSER: QGZ file
+// ══════════════════════════════════════════════════════════════
+async function parseQgzFile(arrayBuffer, parentZip, qgzName) {
+  const qgzZip = await JSZip.loadAsync(arrayBuffer);
+  const names = Object.keys(qgzZip.files);
+
+  // Find .qgs XML
+  const qgsEntry = names.find(n => n.endsWith('.qgs'));
+  if (!qgsEntry) throw new Error('Fichier .qgs non trouvé dans le QGZ.');
+
+  setReadingLabel('Lecture du XML QGIS…', qgsEntry);
+  const qgsXml = await qgzZip.files[qgsEntry].async('string');
+
+  // Check for embedded GPKG data
+  const gpkgFiles = names.filter(n => n.endsWith('.gpkg'));
+  const geojsonFiles = names.filter(n => n.endsWith('.geojson'));
+
+  // Build a combined ZIP containing both qgz contents + parent ZIP if present
+  const combinedZip = qgzZip;
+  // If parentZip (QField package), also have access to external files
+  const externalZip = parentZip;
+
+  return parseQgsXml(qgsXml, combinedZip, externalZip, gpkgFiles, geojsonFiles);
+}
+
+// ══════════════════════════════════════════════════════════════
+// PARSER: QGS XML → layer schema
+// ══════════════════════════════════════════════════════════════
+async function parseQgsXml(xmlText, internalZip, externalZip, gpkgFiles, geojsonFiles) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlText, 'text/xml');
+  const layers = [];
+
+  const mapLayers = doc.querySelectorAll('maplayer[type="vector"]');
+  setReadingLabel('Analyse des couches QGIS…', `${mapLayers.length} couche(s) trouvée(s)`);
+
+  for (const ml of mapLayers) {
+    const name = ml.querySelector('layername')?.textContent?.trim() || 'Couche';
+    const geomAttr = ml.getAttribute('geometry') || '';
+    const datasource = ml.querySelector('datasource')?.textContent?.trim() || '';
+    const geomType = normalizeGeomType(geomAttr, ml);
+
+    // Extract fields from <fields> or <fieldConfiguration>
+    const fields = extractFieldsFromXml(ml);
+
+    // Add geometry columns based on type
+    if (geomType === 'Point') {
+      fields.push({ name: 'latitude', qType: 'double', gType: 'Numeric' });
+      fields.push({ name: 'longitude', qType: 'double', gType: 'Numeric' });
+    } else {
+      fields.push({ name: 'geometry_json', qType: 'string', gType: 'Text' });
+      fields.push({ name: 'centroid_lat', qType: 'double', gType: 'Numeric' });
+      fields.push({ name: 'centroid_lon', qType: 'double', gType: 'Numeric' });
+    }
+
+    // Try to load actual features from GPKG or GeoJSON
+    let features = [];
+    let featuresLoaded = false;
+
+    // Try GeoJSON match first (fast)
+    const baseName = datasource.split('/').pop().replace(/\..*$/, '').toLowerCase();
+    if (geojsonFiles && geojsonFiles.length > 0) {
+      const gjMatch = geojsonFiles.find(n => n.toLowerCase().includes(baseName));
+      if (gjMatch) {
+        const zip = internalZip || externalZip;
+        if (zip && zip.files[gjMatch]) {
+          const content = await zip.files[gjMatch].async('string');
+          try {
+            const fc = JSON.parse(content);
+            if (fc.type === 'FeatureCollection') {
+              features = fc.features;
+              featuresLoaded = true;
+            }
+          } catch(e) {}
+        }
+      }
+    }
+
+    // Try GPKG with sql.js (graceful degradation)
+    if (!featuresLoaded && gpkgFiles && gpkgFiles.length > 0) {
+      const gpkgMatch = gpkgFiles.find(n => n.toLowerCase().includes(baseName) || gpkgFiles.length === 1);
+      if (gpkgMatch) {
+        setReadingLabel('Lecture GPKG…', gpkgMatch.split('/').pop());
+        try {
+          const zip = internalZip || externalZip;
+          if (zip && zip.files[gpkgMatch]) {
+            const gpkgAb = await zip.files[gpkgMatch].async('arraybuffer');
+            const gpkgFeatures = await readGpkgWithSqlJs(gpkgAb, name);
+            if (gpkgFeatures && gpkgFeatures.length > 0) {
+              features = gpkgFeatures;
+              featuresLoaded = true;
+            }
+          }
+        } catch(e) {
+          console.warn('GPKG read failed (sql.js may not be available):', e.message);
+        }
+      }
+    }
+
+    layers.push({
+      name: sanitizeTableName(name),
+      displayName: name,
+      geomType,
+      fields,
+      features: featuresLoaded ? flattenGeoJsonFeatures(features, fields, geomType) : [],
+      featureCount: featuresLoaded ? features.length : 0,
+      hasData: featuresLoaded,
+      datasource
+    });
+  }
+
+  // Also check for WMS/WFS layers (raster/service layers — skip, can't export as table rows)
+  const rasterLayers = doc.querySelectorAll('maplayer[type="raster"]');
+  if (rasterLayers.length > 0 && layers.length === 0) {
+    throw new Error(`Ce projet ne contient que des couches raster (${rasterLayers.length}). Aucune couche vecteur importable.`);
+  }
+
+  return layers;
+}
+
+// ══════════════════════════════════════════════════════════════
+// XML helpers
+// ══════════════════════════════════════════════════════════════
+function normalizeGeomType(geomAttr, ml) {
+  const g = (geomAttr || '').toLowerCase();
+  if (g.includes('point')) return 'Point';
+  if (g.includes('line')) return 'Line';
+  if (g.includes('polygon') || g.includes('surface')) return 'Polygon';
+  // Try wkbType attribute
+  const wkb = ml.getAttribute('wkbType') || '';
+  if (wkb.includes('Point')) return 'Point';
+  if (wkb.includes('Line')) return 'Line';
+  if (wkb.includes('Polygon')) return 'Polygon';
+  return 'Point'; // default
+}
+
+function extractFieldsFromXml(ml) {
+  const fields = [];
+  const seen = new Set();
+
+  // From <fields><field .../></fields>
+  const fieldEls = ml.querySelectorAll('fields > field, fieldConfiguration > field');
+  for (const f of fieldEls) {
+    const name = f.getAttribute('name') || f.getAttribute('id') || '';
+    if (!name || seen.has(name) || name.startsWith('_')) continue;
+    seen.add(name);
+
+    const typeName = (f.getAttribute('typeName') || f.getAttribute('type') || 'String').toLowerCase();
+    const gType = qgsTypeToGrist(typeName);
+    fields.push({ name: sanitizeColName(name), label: name, qType: typeName, gType });
+  }
+
+  // Fallback: from aliases
+  if (fields.length === 0) {
+    const aliases = ml.querySelectorAll('aliases > alias');
+    for (const a of aliases) {
+      const name = a.getAttribute('field') || '';
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      fields.push({ name: sanitizeColName(name), label: name, qType: 'string', gType: 'Text' });
+    }
+  }
+
+  return fields;
+}
+
+function qgsTypeToGrist(typeName) {
+  const t = typeName.toLowerCase();
+  if (t.includes('int') || t.includes('long')) return 'Int';
+  if (t.includes('real') || t.includes('double') || t.includes('float') || t.includes('numeric')) return 'Numeric';
+  if (t.includes('bool')) return 'Bool';
+  if (t.includes('date') && t.includes('time')) return 'DateTime:Europe/Paris';
+  if (t.includes('date')) return 'Date';
+  return 'Text';
+}
+
+// ══════════════════════════════════════════════════════════════
+// GPKG reader via sql.js (optional, graceful degradation)
+// ══════════════════════════════════════════════════════════════
+let sqlJsDb = null;
+
+async function loadSqlJs() {
+  if (sqlJsDb) return sqlJsDb;
+  return new Promise((resolve, reject) => {
+    if (typeof initSqlJs !== 'undefined') { resolve(null); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.12.0/sql-wasm.js';
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+async function readGpkgWithSqlJs(arrayBuffer, layerHint) {
+  try {
+    await loadSqlJs();
+    if (typeof initSqlJs === 'undefined') return null;
+
+    const SQL = await initSqlJs({
+      locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.12.0/${f}`
+    });
+
+    const db = new SQL.Database(new Uint8Array(arrayBuffer));
+    // List feature tables
+    const tableRes = db.exec("SELECT table_name FROM gpkg_contents WHERE data_type='features'");
+    if (!tableRes.length || !tableRes[0].values.length) return null;
+
+    const features = [];
+    for (const [tableName] of tableRes[0].values) {
+      // Get columns
+      const cols = db.exec(`PRAGMA table_info(${tableName})`);
+      const colNames = cols[0].values.map(r => r[1]);
+      const geomColRes = db.exec(`SELECT column_name FROM gpkg_geometry_columns WHERE table_name='${tableName}'`);
+      const geomCol = geomColRes.length ? geomColRes[0].values[0][0] : 'geom';
+
+      // Read rows (limit 5000 for perf)
+      const rows = db.exec(`SELECT * FROM ${tableName} LIMIT 5000`);
+      if (!rows.length) continue;
+
+      for (const row of rows[0].values) {
+        const props = {};
+        colNames.forEach((c, i) => {
+          if (c !== geomCol && c !== 'fid') props[c] = row[i];
+        });
+        // Geometry is binary WKB inside GPKG envelope — skip for now
+        features.push({ type: 'Feature', geometry: null, properties: props });
+      }
+    }
+
+    db.close();
+    return features;
+  } catch(e) {
+    console.warn('sql.js GPKG read error:', e);
+    return null;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// BUILD LAYER FROM GEOJSON
+// ══════════════════════════════════════════════════════════════
+function buildLayerFromGeojson(name, geojson) {
+  const features = geojson.features || [];
+  const geomType = detectGeomTypeFromFeatures(features);
+
+  // Infer fields from all features
+  const fieldMap = {};
+  for (const f of features.slice(0, 200)) {
+    const props = f.properties || {};
+    for (const [k, v] of Object.entries(props)) {
+      if (!fieldMap[k]) {
+        fieldMap[k] = { name: sanitizeColName(k), label: k, qType: inferType(v), gType: jsTypeToGrist(v) };
+      }
+    }
+  }
+
+  const fields = Object.values(fieldMap);
+
+  // Add geometry columns
+  if (geomType === 'Point') {
+    fields.push({ name: 'latitude', label: 'Latitude', qType: 'double', gType: 'Numeric' });
+    fields.push({ name: 'longitude', label: 'Longitude', qType: 'double', gType: 'Numeric' });
+  } else {
+    fields.push({ name: 'geometry_json', label: 'GeoJSON', qType: 'string', gType: 'Text' });
+    fields.push({ name: 'centroid_lat', label: 'Centroid Lat', qType: 'double', gType: 'Numeric' });
+    fields.push({ name: 'centroid_lon', label: 'Centroid Lon', qType: 'double', gType: 'Numeric' });
+  }
+
+  return {
+    name: sanitizeTableName(name),
+    displayName: name,
+    geomType,
+    fields,
+    features: flattenGeoJsonFeatures(features, fields, geomType),
+    featureCount: features.length,
+    hasData: features.length > 0,
+    datasource: '(GeoJSON)'
+  };
+}
+
+function detectGeomTypeFromFeatures(features) {
+  // Count votes to get the dominant type (avoid noise from mixed collections)
+  const votes = { Point: 0, Line: 0, Polygon: 0 };
+  for (const f of features.slice(0, 50)) {
+    const t = (f.geometry?.type || '').toLowerCase();
+    if (t.includes('polygon')) votes.Polygon++;
+    else if (t.includes('linestring') || t === 'multiline') votes.Line++;
+    else if (t.includes('point')) votes.Point++;
+  }
+  if (votes.Polygon >= votes.Point && votes.Polygon >= votes.Line) return 'Polygon';
+  if (votes.Line >= votes.Point) return 'Line';
+  if (votes.Point > 0) return 'Point';
+  return 'Polygon'; // default for flood maps
+}
+
+function flattenGeoJsonFeatures(features, fields, geomType) {
+  const rows = [];
+  const fieldNames = fields.map(f => f.name);
+  const propLabels = fields.filter(f => f.label && !['latitude','longitude','geometry_json','centroid_lat','centroid_lon'].includes(f.name)).map(f => f.label);
+
+  for (const feat of features) {
+    const props = feat.properties || {};
+    const geom = feat.geometry;
+    const row = {};
+
+    // Properties
+    for (const f of fields) {
+      if (f.label && props.hasOwnProperty(f.label)) {
+        row[f.name] = props[f.label];
+      } else if (props.hasOwnProperty(f.name)) {
+        row[f.name] = props[f.name];
+      } else {
+        row[f.name] = null;
+      }
+    }
+
+    // Geometry
+    if (geom) {
+      if (geomType === 'Point') {
+        const coords = getPointCoords(geom);
+        row['latitude'] = coords ? coords[1] : null;
+        row['longitude'] = coords ? coords[0] : null;
+      } else {
+        try {
+        // Round coordinates to 5 decimals (~1m precision) to reduce JSON size
+        row['geometry_json'] = JSON.stringify(geom, (k, v) =>
+          typeof v === 'number' && !Number.isInteger(v) ? Math.round(v * 100000) / 100000 : v);
+      } catch(e) { row['geometry_json'] = null; }
+        const centroid = computeCentroid(geom);
+        row['centroid_lat'] = centroid ? centroid[1] : null;
+        row['centroid_lon'] = centroid ? centroid[0] : null;
+      }
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+function getPointCoords(geom) {
+  if (!geom) return null;
+  if (geom.type === 'Point') return geom.coordinates;
+  if (geom.type === 'MultiPoint' && geom.coordinates.length) return geom.coordinates[0];
+  return null;
+}
+
+function computeCentroid(geom) {
+  if (!geom) return null;
+  try {
+    let coords = [];
+    function collectCoords(c) {
+      if (typeof c[0] === 'number') { coords.push(c); }
+      else c.forEach(collectCoords);
+    }
+    collectCoords(geom.coordinates);
+    if (!coords.length) return null;
+    const lon = coords.reduce((s, c) => s + c[0], 0) / coords.length;
+    const lat = coords.reduce((s, c) => s + c[1], 0) / coords.length;
+    return [lon, lat];
+  } catch(e) { return null; }
+}
+
+// ══════════════════════════════════════════════════════════════
+// TYPE INFERENCE
+// ══════════════════════════════════════════════════════════════
+function inferType(v) {
+  if (v === null || v === undefined) return 'string';
+  if (typeof v === 'boolean') return 'boolean';
+  if (typeof v === 'number') return Number.isInteger(v) ? 'integer' : 'double';
+  return 'string';
+}
+
+function jsTypeToGrist(v) {
+  if (v === null || v === undefined) return 'Text';
+  if (typeof v === 'boolean') return 'Bool';
+  if (typeof v === 'number') return Number.isInteger(v) ? 'Int' : 'Numeric';
+  return 'Text';
+}
+
+function sanitizeTableName(name) {
+  let s = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  s = s.replace(/[^A-Za-z0-9_]/g, '_').replace(/^[0-9]/, 'T$&').replace(/_+/g, '_').replace(/^_|_$/g, '');
+  return s || 'Couche';
+}
+
+function sanitizeColName(name) {
+  let s = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  s = s.replace(/[^A-Za-z0-9_]/g, '_').replace(/^[0-9]/, 'c$&').replace(/_+/g, '_').replace(/^_|_$/g, '');
+  if (['id','manualsort'].includes(s.toLowerCase())) s = s + '_col';
+  return s || 'col';
+}
+
+// ══════════════════════════════════════════════════════════════
+// PREVIEW UI
+// ══════════════════════════════════════════════════════════════
+function showPreview(layers, fileName) {
+  const totalFeatures = layers.reduce((s, l) => s + l.featureCount, 0);
+  document.getElementById('preview-title').textContent = `${layers.length} couche${layers.length > 1 ? 's' : ''} détectée${layers.length > 1 ? 's' : ''}`;
+  document.getElementById('preview-meta').textContent = `${fileName} · ${totalFeatures.toLocaleString('fr')} entité${totalFeatures > 1 ? 's' : ''} · cliquer pour voir les champs`;
+
+  const body = document.getElementById('preview-body');
+  body.innerHTML = '';
+
+  const GEOM_ICONS = {
+    Point:   '<svg width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="currentColor"/></svg>',
+    Line:    '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="2" y1="10" x2="10" y2="2"/></svg>',
+    Polygon: '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="2.5" width="9" height="7" rx="1"/></svg>',
+    unknown: '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="6" r="5"/><line x1="6" y1="4" x2="6" y2="6.5"/><line x1="6" y1="8" x2="6.01" y2="8"/></svg>'
+  };
+  const PALETTE = ['#0369a1','#10b981','#f59e0b','#ef4444','#8b5cf6','#3b82f6'];
+
+  layers.forEach((layer, idx) => {
+    const icon = GEOM_ICONS[layer.geomType] || '?';
+    const color = PALETTE[idx % PALETTE.length];
+    const card = document.createElement('div');
+    card.className = 'layer-card';
+    card.dataset.idx = idx;
+
+    const fieldRows = layer.fields.map(f =>
+      `<tr>
+        <td class="field-name" style="color:var(--text)">${f.label || f.name}</td>
+        <td class="col-type">${f.qType}</td>
+        <td><span class="col-grist">${f.gType}</span></td>
+      </tr>`
+    ).join('');
+
+    card.innerHTML = `
+      <div class="layer-card-head" onclick="toggleLayerCard(${idx})">
+        <span class="geom-icon ${layer.geomType.toLowerCase()}" style="color:${color}">${icon}</span>
+        <span class="layer-name">${layer.displayName}</span>
+        <span class="layer-stats">${layer.featureCount > 0 ? layer.featureCount.toLocaleString('fr') + ' entités' : (layer.hasData ? '0 entité' : 'schéma seul')}</span>
+        <span class="layer-chevron" id="chev-${idx}">›</span>
+      </div>
+      <div class="layer-card-body" id="body-${idx}">
+        <div class="layer-include">
+          <input type="checkbox" class="checkbox" id="inc-${idx}" checked onchange="updateImportCount()">
+          <label for="inc-${idx}">Inclure cette couche dans l'import</label>
+          ${!layer.hasData ? '<span style="font-size:11px;color:var(--yellow);margin-left:auto">⚠ Schéma sans données (GPKG non lu)</span>' : ''}
+        </div>
+        <table class="field-table">
+          <thead><tr><th>CHAMP QGIS</th><th>TYPE QGIS</th><th>TYPE GRIST</th></tr></thead>
+          <tbody>${fieldRows}</tbody>
+        </table>
+      </div>`;
+    body.appendChild(card);
+  });
+
+  setState('preview');
+  // Update button count AFTER checkboxes are in DOM
+  updateImportCount();
+}
+
+function toggleLayerCard(idx) {
+  const body = document.getElementById('body-' + idx);
+  const chev = document.getElementById('chev-' + idx);
+  const open = body.classList.toggle('open');
+  chev.classList.toggle('open', open);
+}
+
+function updateImportCount() {
+  const checked = document.querySelectorAll('.checkbox:checked').length;
+  document.getElementById('import-btn').textContent = `⬆ Importer ${checked} couche${checked > 1 ? 's' : ''} dans Grist`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// GRIST IMPORT
+// ══════════════════════════════════════════════════════════════
+async function startImport() {
+  const selectedLayers = parsedLayers.filter((_, idx) => {
+    const cb = document.getElementById('inc-' + idx);
+    return cb && cb.checked;
+  });
+
+  if (selectedLayers.length === 0) {
+    showToast('Aucune couche sélectionnée', 'error');
+    return;
+  }
+
+  setState('importing');
+  const progressList = document.getElementById('progress-list');
+  progressList.innerHTML = '';
+
+  // Create progress items
+  const progEls = {};
+  for (const layer of selectedLayers) {
+    const item = document.createElement('div');
+    item.className = 'progress-item';
+    item.innerHTML = `
+      <div class="progress-label">
+        <span class="progress-name">${layer.displayName}</span>
+        <span class="progress-pct" id="pct-${layer.name}">0%</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="bar-${layer.name}"></div>
+      </div>`;
+    progressList.appendChild(item);
+    progEls[layer.name] = {
+      bar: document.getElementById('bar-' + layer.name),
+      pct: document.getElementById('pct-' + layer.name)
+    };
+  }
+
+  function setProgress(layerName, pct, done, error) {
+    const el = progEls[layerName];
+    if (!el) return;
+    el.bar.style.width = pct + '%';
+    el.pct.textContent = done ? '✓' : error ? '✗' : pct + '%';
+    if (done) el.bar.classList.add('done');
+    if (error) el.bar.classList.add('error');
+  }
+
+  const importedLayerData = {};
+  let allOk = true;
+
+  for (const layer of selectedLayers) {
+    document.getElementById('import-sub').textContent = `Table: ${layer.displayName}`;
+    setProgress(layer.name, 10);
+
+    try {
+      // Check if table exists
+      let tableName = layer.name;
+      try {
+        const tables = await grist.docApi.fetchTable('_grist_Tables');
+        let n = 0;
+        while (tables.tableId.includes(tableName)) {
+          n++;
+          tableName = layer.name + '_' + n;
+        }
+      } catch(e) {
+        // _grist_Tables not accessible, try anyway
+      }
+
+      // Create table
+      // Grist AddTable API accepts "DateTime" not "DateTime:Europe/Paris"
+      const gristCols = layer.fields.map(f => ({
+        id: f.name,
+        type: f.gType.startsWith('DateTime') ? 'DateTime' : f.gType
+      }));
+      setProgress(layer.name, 25);
+
+      await grist.docApi.applyUserActions([['AddTable', tableName, gristCols]]);
+      setProgress(layer.name, 40);
+
+      // Insert rows in batches of 500
+      const rows = layer.features;
+      // Smaller batches for polygon layers (geometry_json strings can be very large)
+      const hasGeom = layer.fields.some(f => f.name === 'geometry_json');
+      const BATCH = hasGeom ? 100 : 500;
+      const total = Math.max(rows.length, 1);
+
+      for (let i = 0; i < rows.length; i += BATCH) {
+        const batch = rows.slice(i, i + BATCH);
+        const colData = {};
+        for (const f of layer.fields) {
+          colData[f.name] = batch.map(r => {
+            const v = r[f.name];
+            if (v === null || v === undefined) return null;
+            if (f.gType === 'Int') return Number.isFinite(parseInt(v)) ? parseInt(v) : null;
+            if (f.gType === 'Numeric') return Number.isFinite(parseFloat(v)) ? parseFloat(v) : null;
+            if (f.gType === 'Bool') return !!v ? 1 : 0;
+            return String(v);
+          });
+        }
+
+        await grist.docApi.applyUserActions([[
+          'BulkAddRecord', tableName,
+          Array(batch.length).fill(null),
+          colData
+        ]]);
+
+        const pct = Math.round(40 + (i + batch.length) / total * 55);
+        setProgress(layer.name, pct);
+      }
+
+      setProgress(layer.name, 100, true);
+      importedLayerData[tableName] = layer;
+
+    } catch(err) {
+      console.error('Import error for', layer.name, err);
+      setProgress(layer.name, 100, false, true);
+      allOk = false;
+    }
+  }
+
+  // Wait a moment to show final state
+  await new Promise(r => setTimeout(r, 800));
+
+  if (Object.keys(importedLayerData).length > 0) {
+    const nOk = Object.keys(importedLayerData).length;
+    showToast(`✓ ${nOk} table${nOk > 1 ? 's' : ''} importée${nOk > 1 ? 's' : ''} — sauvegarde du widget…`);
+
+    if (originalHtml) {
+      try {
+        setState('importing');
+        document.getElementById('import-sub').textContent = 'Adaptation du widget pour Grist…';
+
+        // Adapt HTML: strip inline JSON blobs, inject Grist data loader
+        const adaptedHtml = adaptHtmlForGrist(originalHtml, parsedLayers);
+
+        document.getElementById('import-sub').textContent = 'Sauvegarde du widget dans Grist…';
+        // Save adapted widget to config table
+        await saveWidgetToConfig(adaptedHtml, selectedLayers, fileInfo ? fileInfo.name : 'widget');
+        showToast('✓ Widget sauvegardé dans Grist', 'success');
+      } catch(e) {
+        console.error('Widget save failed:', e);
+        showToast('⚠ Import OK, sauvegarde widget échouée : ' + e.message, '');
+      }
+      // Render the adapted widget immediately
+      const adapted = adaptHtmlForGrist(originalHtml, parsedLayers);
+      renderAsWidget(adapted);
+    } else {
+      // No source HTML (ZIP/QGZ) → simple Grist map
+      showToast(`✓ ${nOk} table${nOk > 1 ? 's' : ''} importée${nOk > 1 ? 's' : ''}`, 'success');
+      showMap(importedLayerData);
+    }
+  } else {
+    document.getElementById('error-msg').textContent = 'Aucune table créée. Vérifiez les droits du widget sur le document Grist (accès "full" requis).';
+    setState('error');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// MAP VIEW (post-import)
+// ══════════════════════════════════════════════════════════════
+const LAYER_COLORS = ['#0369a1','#10b981','#f59e0b','#ef4444','#8b5cf6','#3b82f6','#f97316'];
+
+// ══════════════════════════════════════════════════════════════
+// STORAGE PERSISTENCE
+// ══════════════════════════════════════════════════════════════
+async function saveToStorage(importedLayerData) {
+  try {
+    const state = {
+      fileName: fileInfo ? fileInfo.name : '',
+      importedAt: new Date().toISOString(),
+      tables: Object.entries(importedLayerData).map(([tableName, layer]) => ({
+        tableName,
+        displayName: layer.displayName,
+        geomType: layer.geomType,
+        featureCount: layer.featureCount,
+        fields: layer.fields.map(f => ({ name: f.name, label: f.label || f.name, gType: f.gType }))
+      }))
+    };
+    await window.storage.set('qgis_import_state', JSON.stringify(state));
+
+    // Note: we do NOT store the original HTML (too large for storage, ~5MB limit)
+    // On refresh, user re-uploads the file to get back the original controls
+    console.log('[QGISImport] Metadata saved to storage (tables: ' + state.tables.length + ')');
+  } catch(e) {
+    console.warn('[QGISImport] Storage save failed:', e);
+  }
+}
+
+async function restoreFromStorage() {
+  try {
+    const stateRes = await window.storage.get('qgis_import_state');
+    if (!stateRes || !stateRes.value) return false;
+
+    const state = JSON.parse(stateRes.value);
+    if (!state.tables || !state.tables.length) return false;
+
+    document.getElementById('header-file').textContent = state.fileName || 'fichier précédent';
+
+    // Rebuild importedLayerData from stored metadata
+    // Features are in Grist tables — rebuild minimal layer objects for map rendering
+    const restoredData = {};
+    for (const t of state.tables) {
+      restoredData[t.tableName] = {
+        displayName: t.displayName,
+        geomType: t.geomType,
+        featureCount: t.featureCount,
+        fields: t.fields,
+        features: [] // will be loaded from Grist on demand
+      };
+    }
+
+    // Show simple Grist map as fallback (features loaded from Grist tables)
+    showMap(restoredData, state);
+    // Show banner inviting user to re-upload for full controls
+    showRestoreBanner(state);
+    return true;
+  } catch(e) {
+    console.warn('[QGISImport] Storage restore failed:', e);
+    return false;
+  }
+}
+
+// Load features from Grist table (for map display after restore)
+async function loadFeaturesFromGrist(tableName, fields) {
+  try {
+    const data = await grist.docApi.fetchTable(tableName);
+    if (!data || !data.id) return [];
+    const n = data.id.length;
+    const rows = [];
+    for (let i = 0; i < n; i++) {
+      const row = {};
+      Object.keys(data).forEach(k => { row[k] = data[k][i]; });
+      rows.push(row);
+    }
+    return rows;
+  } catch(e) {
+    console.warn('[QGISImport] Could not load table', tableName, e);
+    return [];
+  }
+}
+
+function showMap(importedLayerData, restoredState) {
+  setState('map');
+
+  // ── Toolbar: "Carte originale" button ──────────────────────
+  const togglesEl = document.getElementById('layer-toggles');
+  const toolbar = togglesEl.closest('.map-toolbar');
+  // Remove any previous orig/reset buttons
+  toolbar.querySelectorAll('.map-btn-orig,.map-btn-reset').forEach(b => b.remove());
+
+  const btnOrig = document.createElement('button');
+  btnOrig.className = 'map-btn-orig';
+  btnOrig.textContent = '⊞ Carte originale';
+  btnOrig.title = 'Afficher le fichier HTML source avec tous ses contrôles';
+  btnOrig.disabled = !originalHtml;
+  btnOrig.onclick = () => showOriginalMap(_currentImportedData || importedLayerData);
+  toolbar.appendChild(btnOrig);
+
+  const btnReset = document.createElement('button');
+  btnReset.className = 'map-btn-orig';
+  btnReset.style.borderColor = 'var(--text-dim)';
+  btnReset.style.color = 'var(--text-dim)';
+  btnReset.textContent = '← Nouveau fichier';
+  btnReset.onclick = () => resetToIdleState();
+  toolbar.appendChild(btnReset);
+
+  // Init Leaflet
+  if (leafletMap) { leafletMap.remove(); leafletMap = null; }
+  leafletMap = L.map('leaflet-map', { preferCanvas: true });
+  L.tileLayer('https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png', {
+    attribution: '© OSM © CARTO', maxZoom: 19
+  }).addTo(leafletMap);
+
+  togglesEl.innerHTML = '';
+  let colorIdx = 0;
+  const allBounds = [];
+
+  for (const [tableName, layer] of Object.entries(importedLayerData)) {
+    const color = LAYER_COLORS[colorIdx++ % LAYER_COLORS.length];
+
+    // Toggle button
+    const btn = document.createElement('button');
+    btn.className = 'map-layer-btn active';
+    btn.textContent = layer.displayName;
+    btn.style.borderColor = color;
+    btn.style.color = color;
+    togglesEl.appendChild(btn);
+
+    // Build Leaflet layer from data
+    // For restored sessions, features come from Grist table
+    const lyrGroup = L.layerGroup().addTo(leafletMap);
+    leafletLayers[tableName] = lyrGroup;
+    const rows = layer.features && layer.features.length > 0
+      ? layer.features
+      : []; // async load below
+
+    if (layer.geomType === 'Point') {
+      for (const row of rows) {
+        const lat = row.latitude, lon = row.longitude;
+        if (!lat || !lon) continue;
+        const m = L.circleMarker([lat, lon], {
+          radius: 5, fillColor: color, color: 'rgba(0,0,0,0.4)',
+          weight: 1, fillOpacity: 0.85
+        });
+        m.bindPopup(buildPopupHtml(row, layer.fields));
+        m.addTo(lyrGroup);
+        allBounds.push([lat, lon]);
+      }
+    } else {
+      for (const row of rows) {
+        if (!row.geometry_json) continue;
+        try {
+          const geom = JSON.parse(row.geometry_json);
+          const gl = L.geoJSON({ type: 'Feature', geometry: geom }, {
+            style: { color, fillColor: color, fillOpacity: 0.25, weight: 1.5 },
+            pointToLayer: (f, ll) => L.circleMarker(ll, { radius: 5, fillColor: color, fillOpacity: 0.85, weight: 1 })
+          });
+          gl.bindPopup(buildPopupHtml(row, layer.fields));
+          gl.addTo(lyrGroup);
+          try {
+            const b = gl.getBounds();
+            if (b.isValid()) { allBounds.push(b.getNorthWest()); allBounds.push(b.getSouthEast()); }
+          } catch(e) {}
+        } catch(e) {}
+      }
+    }
+
+    btn.addEventListener('click', () => {
+      const active = btn.classList.toggle('active');
+      if (active) leafletMap.addLayer(lyrGroup);
+      else leafletMap.removeLayer(lyrGroup);
+    });
+  }
+
+  // Fit bounds
+  if (allBounds.length > 0) {
+    leafletMap.fitBounds(L.latLngBounds(allBounds.map(p => Array.isArray(p) ? p : [p.lat, p.lng])), { padding: [20, 20], maxZoom: 15 });
+  } else {
+    leafletMap.setView([46.5, 2.5], 5);
+  }
+
+  // If restored from storage with no in-memory features, load from Grist tables
+  if (restoredState) {
+    (async () => {
+      const PALETTE = ['#0369a1','#10b981','#f59e0b','#ef4444','#8b5cf6','#3b82f6'];
+      let ci = 0;
+      for (const [tableName, layer] of Object.entries(importedLayerData)) {
+        if (layer.features && layer.features.length > 0) { ci++; continue; }
+        const color = PALETTE[ci++ % PALETTE.length];
+        const lyrGroup = leafletLayers[tableName];
+        if (!lyrGroup) continue;
+
+        showToast('Chargement ' + layer.displayName + '…');
+        const rows = await loadFeaturesFromGrist(tableName, layer.fields);
+        if (!rows.length) continue;
+
+        const newBounds = [];
+        if (layer.geomType === 'Point') {
+          for (const row of rows) {
+            const lat = +row.latitude, lon = +row.longitude;
+            if (!lat || !lon) continue;
+            L.circleMarker([lat, lon], { radius: 5, fillColor: color, color: 'rgba(0,0,0,0.4)', weight: 1, fillOpacity: 0.85 })
+              .bindPopup(buildPopupHtml(row, layer.fields)).addTo(lyrGroup);
+            newBounds.push([lat, lon]);
+          }
+        } else {
+          for (const row of rows) {
+            if (!row.geometry_json) continue;
+            try {
+              const geom = JSON.parse(row.geometry_json);
+              const gl = L.geoJSON({ type: 'Feature', geometry: geom }, {
+                style: { color, fillColor: color, fillOpacity: 0.25, weight: 1.5 }
+              }).bindPopup(buildPopupHtml(row, layer.fields)).addTo(lyrGroup);
+              try { const b = gl.getBounds(); if (b.isValid()) { newBounds.push(b.getNorthWest()); newBounds.push(b.getSouthEast()); } } catch(e){}
+            } catch(e) {}
+          }
+        }
+        if (newBounds.length > 0 && leafletMap) {
+          leafletMap.fitBounds(L.latLngBounds(newBounds.map(p => Array.isArray(p) ? p : [p.lat, p.lng])), { padding: [20, 20], maxZoom: 15 });
+        }
+      }
+      showToast('Carte restaurée ✓', 'success');
+    })();
+  }
+}
+
+
+
+// ══════════════════════════════════════════════════════════════
+// WIDGET ADAPTATION — strip inline GeoJSON, inject Grist loader
+// ══════════════════════════════════════════════════════════════
+// Strategy: intercept DOMContentLoaded/load handlers BEFORE any
+// page scripts run. Load real data from Grist tables. Release.
+// The map init code runs normally but sees Grist data.
+// ══════════════════════════════════════════════════════════════
+function adaptHtmlForGrist(html, layers) {
+  // Build mapping: varName → {tableName, geomType, propFields}
+  const mapping = {};
+  for (const layer of layers) {
+    if (!layer.varName) continue;
+    const propFields = layer.fields
+      .filter(f => !['geometry_json','centroid_lat','centroid_lon','latitude','longitude'].includes(f.name))
+      .map(f => ({ name: f.name, label: f.label || f.name, gType: f.gType }));
+    mapping[layer.varName] = {
+      table: sanitizeTableName(layer.displayName || layer.name),
+      geomType: layer.geomType,
+      fields: propFields
+    };
+  }
+
+  if (!Object.keys(mapping).length) return html; // nothing to adapt
+
+  // 1. Strip inline FeatureCollection blobs → replace with empty stub
+  //    (keeps var declaration so existing code doesn't break)
+  let adapted = html;
+  for (const varName of Object.keys(mapping)) {
+    // Match: var VARNAME = { ... "FeatureCollection" ... } (possibly multiline)
+    const declPattern = new RegExp(
+      'var\\s+' + varName + '\\s*=\\s*\\{', 'g'
+    );
+    let m;
+    while ((m = declPattern.exec(adapted)) !== null) {
+      const start = m.index + m[0].length - 1;
+      const sub = adapted.slice(start);
+      const end = findMatchingBraceStr(sub);
+      if (end < 0) continue;
+      const blob = sub.slice(0, end + 1);
+      if (!blob.includes('FeatureCollection')) continue;
+      adapted = adapted.slice(0, start) +
+        'window.' + varName + ' || {"type":"FeatureCollection","features":[]}' +
+        adapted.slice(start + end + 1);
+      break; // one replacement per varName
+    }
+  }
+
+  // 2. Build Grist loader script — injected as FIRST script in <head>
+  //    It intercepts DOMContentLoaded/load to block until data is ready,
+  //    then populates the global variables with Grist data and releases.
+  const mappingJson = JSON.stringify(mapping, null, 2);
+
+  const loaderScript = `<script id="__grist_data_loader">
+/* === QGIS→GRIST DATA LOADER (auto-generated) === */
+(function() {
+  const __GRIST_LAYERS = ${mappingJson};
+
+  // ── Hold DOMContentLoaded and window.load until data is ready ──
+  let __release;
+  const __ready = new Promise(r => __release = r);
+  const __origAEL = EventTarget.prototype.addEventListener;
+  EventTarget.prototype.addEventListener = function(type, fn, opts) {
+    if ((this === document || this === window) &&
+        (type === 'DOMContentLoaded' || type === 'load')) {
+      const held = async function(...a) { await __ready; fn.apply(this, a); };
+      return __origAEL.call(this, type, held, opts);
+    }
+    return __origAEL.call(this, type, fn, opts);
+  };
+
+  // ── Reconstruct GeoJSON FeatureCollection from Grist table ──
+  async function __loadLayer(cfg) {
+    const data = await grist.docApi.fetchTable(cfg.table);
+    if (!data || !data.id) return {type:'FeatureCollection',features:[]};
+    const n = data.id.length;
+    const features = [];
+    for (let i = 0; i < n; i++) {
+      const props = {};
+      for (const f of cfg.fields) {
+        if (data[f.name] !== undefined) props[f.label || f.name] = data[f.name][i];
+      }
+      let geometry = null;
+      if (data.geometry_json && data.geometry_json[i]) {
+        try { geometry = JSON.parse(data.geometry_json[i]); } catch(e) {}
+      } else if (data.latitude && data.longitude) {
+        geometry = {type:'Point', coordinates:[+data.longitude[i], +data.latitude[i]]};
+      }
+      if (geometry) features.push({type:'Feature', properties:props, geometry});
+    }
+    return {type:'FeatureCollection', features};
+  }
+
+  // ── Main: load all layers then release DOM ──
+  (async () => {
+    try {
+      // 1. Wait for grist-plugin-api to define window.grist
+      for (let i = 0; i < 100; i++) {
+        if (typeof grist !== 'undefined') break;
+        await new Promise(r => setTimeout(r, 50));
+      }
+      if (typeof grist === 'undefined') throw new Error('grist API not found after 5s');
+
+      // 2. Call grist.ready() — establishes PostMessage channel
+      grist.ready({ requiredAccess: 'full' });
+
+      // 3. Wait until fetchTable actually works (retry until API is ready)
+      //    This is more reliable than a fixed timeout
+      const firstTable = Object.values(__GRIST_LAYERS)[0];
+      let apiReady = false;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        await new Promise(r => setTimeout(r, 150));
+        try {
+          const test = await grist.docApi.fetchTable(firstTable.table);
+          if (test && test.id) { apiReady = true; break; }
+        } catch(e) { /* not ready yet */ }
+      }
+      if (!apiReady) throw new Error('Grist docApi not ready after 6s');
+
+      // 4. Load all layers
+      for (const [varName, cfg] of Object.entries(__GRIST_LAYERS)) {
+        try {
+          const fc = await __loadLayer(cfg);
+          window[varName] = fc;
+          console.log('[GristLoader] ✓', varName, '←', cfg.table,
+            '(' + fc.features.length + ' features)');
+        } catch(e) {
+          console.warn('[GristLoader] ✗', varName, ':', e.message);
+        }
+      }
+    } catch(e) {
+      console.error('[GristLoader] Fatal:', e.message);
+    } finally {
+      EventTarget.prototype.addEventListener = __origAEL;
+      __release(); // 🟢 release — map init now runs with Grist data
+    }
+  })();
+})();
+</scri` + `pt>`;
+
+  // ── Step 2: Transform IIFEs → DOMContentLoaded listeners ──────
+  // IIFEs execute synchronously during parsing BEFORE our async loader finishes.
+  // Wrapping in DOMContentLoaded ensures they run AFTER globals are populated.
+  adapted = adapted.replace(
+    /<script((?![^>]*__grist)[^>]*)>\s*(\(function\s*\(\)\s*\{)([\s\S]*?)(\}\)\s*\(\);?)\s*<\/script>/gi,
+    function(match, attrs, open, body, close) {
+      const _SO = '<' + 'script', _SC = '</' + 'script>';
+      return _SO + attrs + '>document.addEventListener(\'DOMContentLoaded\', function() {' +
+             body + '});' + _SC;
+    }
+  );
+
+  // Inject as very first child of <head>
+  // Ensure grist-plugin-api.js is present (flood_map templates don't include it)
+  const GRIST_API_SRC = 'https://docs.getgrist.com/grist-plugin-api.js';
+  if (!adapted.includes(GRIST_API_SRC)) {
+    const gristApiTag = `<script src="${GRIST_API_SRC}"></` + `script>`;
+    adapted = adapted.replace(/<head([^>]*)>/i, `<head$1>\n` + gristApiTag);
+  }
+
+  // Inject data loader as very first child of <head>
+  adapted = adapted.replace(/<head([^>]*)>/i, `<head$1>\n` + loaderScript);
+
+  return adapted;
+}
+
+// String-based brace matcher (for use outside DOM context)
+function findMatchingBraceStr(str) {
+  let depth = 0, inStr = false, esc = false;
+  for (let i = 0; i < str.length; i++) {
+    const c = str[i];
+    if (esc) { esc = false; continue; }
+    if (c === '\\' && inStr) { esc = true; continue; }
+    if (c === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; if (depth === 0) return i; }
+  }
+  return -1;
+}
+
+// ══════════════════════════════════════════════════════════════
+// ORIGINAL MAP VIEWER (embedded iframe with full controls)
+// ══════════════════════════════════════════════════════════════
+let _currentImportedData = null; // keep reference for back-nav
+
+function showOriginalMap(importedLayerData) {
+  if (!originalHtml) { showToast('Carte originale non disponible', 'error'); return; }
+  if (importedLayerData) _currentImportedData = importedLayerData;
+  document.getElementById('orig-filename').textContent = fileInfo ? fileInfo.name : 'carte originale';
+  const iframe = document.getElementById('orig-iframe');
+  iframe.srcdoc = originalHtml;
+  setState('original');
+}
+
+// ── Banner shown on refresh (file not in memory) ─────────────
+function showRestoreBanner(state) {
+  // Remove existing banner
+  document.querySelectorAll('.restore-banner').forEach(b => b.remove());
+
+  const el = document.getElementById('state-map');
+  const banner = document.createElement('div');
+  banner.className = 'restore-banner';
+
+  const importedAt = state.importedAt ? new Date(state.importedAt).toLocaleString('fr-FR') : '';
+  const tableNames = state.tables.map(t => t.displayName || t.tableName).join(', ');
+
+  banner.innerHTML = `
+    <div class="rb-info">
+      <span class="rb-icon">↻</span>
+      <div>
+        <div class="rb-title">Session restaurée — ${state.fileName || 'fichier précédent'}</div>
+        <div class="rb-sub">${tableNames} · importé le ${importedAt}</div>
+      </div>
+    </div>
+    <label class="rb-upload-label">
+      ⊞ Recharger le fichier original
+      <input type="file" accept=".html,.htm,.zip,.qgz" style="display:none"
+        onchange="handleRestoreFileUpload(this)">
+    </label>`;
+  el.appendChild(banner);
+}
+
+function handleRestoreFileUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  file.text().then(text => {
+    originalHtml = text;
+    fileInfo = { name: file.name, size: file.size };
+    document.getElementById('header-file').textContent = file.name;
+    showOriginalMap();
+    showToast('Fichier rechargé ✓', 'success');
+  }).catch(e => showToast('Erreur lecture fichier', 'error'));
+}
+
+function buildPopupHtml(row, fields) {
+  const skip = new Set(['geometry_json','centroid_lat','centroid_lon','latitude','longitude','id','manualsort']);
+  let html = '<div style="max-width:260px;font-family:system-ui;font-size:12px">';
+  for (const f of fields) {
+    if (skip.has(f.name)) continue;
+    const v = row[f.name];
+    if (v == null || v === '') continue;
+    html += `<div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px solid #eee">
+      <span style="color:#888">${f.label || f.name}</span>
+      <span style="font-weight:600;color:#1a1a2e">${String(v)}</span>
+    </div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+// ══════════════════════════════════════════════════════════════
+// TOAST
+// ══════════════════════════════════════════════════════════════
+let toastTimer = null;
+function showToast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + type;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+// ══════════════════════════════════════════════════════════════
+// GRIST INIT
+// ══════════════════════════════════════════════════════════════
+grist.ready({ requiredAccess: 'full' });
+
+// ══════════════════════════════════════════════════════════════
+// STARTUP: check if a widget HTML source is stored in Grist
+// If yes → become that widget directly (no import UI shown)
+// If no  → show import drop zone
+// ══════════════════════════════════════════════════════════════
+// Config table storing all widgets (one row per widget)
+const WIDGET_CONFIG_TABLE = 'QgisWidgets';
+
+(async () => {
+  try {
+    await new Promise(r => setTimeout(r, 400)); // let Grist API settle
+
+    // Try to load latest adapted widget from QgisWidgets config table
+    const widget = await loadLatestWidget();
+    if (widget && widget.html) {
+      console.log('[QGISImport] Restoring widget:', widget.name);
+      renderAsWidget(widget.html);
+    } else {
+      setState('drop');
+    }
+  } catch(e) {
+    console.warn('[QGISImport] Init failed:', e);
+    setState('drop');
+  }
+})();
+
+// ── Load latest widget from QgisWidgets config table ─────────
+async function loadLatestWidget() {
+  try {
+    const data = await grist.docApi.fetchTable(WIDGET_CONFIG_TABLE);
+    if (!data || !data.id || !data.id.length) return null;
+    // Return the most recently created widget (last row)
+    const last = data.id.length - 1;
+    return {
+      html: data.html_adapted ? data.html_adapted[last] : null,
+      name: data.widget_name ? data.widget_name[last] : '',
+      config: data.config_json ? JSON.parse(data.config_json[last] || '{}') : {}
+    };
+  } catch(e) {
+    return null; // table doesn't exist yet
+  }
+}
+
+// ── Save adapted widget to QgisWidgets config table ───────────
+async function saveWidgetToConfig(adaptedHtml, layers, fileName) {
+  // Ensure config table exists
+  let tableExists = false;
+  try { await grist.docApi.fetchTable(WIDGET_CONFIG_TABLE); tableExists = true; } catch(e) {}
+
+  if (!tableExists) {
+    await grist.docApi.applyUserActions([['AddTable', WIDGET_CONFIG_TABLE, [
+      { id: 'widget_name',    type: 'Text' },
+      { id: 'source_file',    type: 'Text' },
+      { id: 'html_adapted',   type: 'Text' },
+      { id: 'config_json',    type: 'Text' },
+      { id: 'created_at',     type: 'DateTime' }
+    ]]]);
+  }
+
+  const config = {
+    layers: layers.map(l => ({
+      varName: l.varName || null,
+      tableName: sanitizeTableName(l.displayName || l.name),
+      displayName: l.displayName,
+      geomType: l.geomType,
+      featureCount: l.featureCount
+    }))
+  };
+
+  await grist.docApi.applyUserActions([['BulkAddRecord', WIDGET_CONFIG_TABLE, [null], {
+    widget_name:  [fileName.replace(/\.html?$/i, '')],
+    source_file:  [fileName],
+    html_adapted: [adaptedHtml],
+    config_json:  [JSON.stringify(config)],
+    created_at:   [Math.floor(Date.now() / 1000)]
+  }]]);
+
+  console.log('[QGISImport] Widget saved to', WIDGET_CONFIG_TABLE,
+    '(' + Math.round(adaptedHtml.length / 1024) + ' KB)');
+}
+
+// ── Render this widget AS the stored HTML ────────────────────
+// We replace the entire document content with the source HTML
+// The source HTML (flood_map.html) already has grist-plugin-api
+// and reads from Grist tables — so everything works natively.
+function renderAsWidget(html) {
+  // NOTE: never write <\/script> literally here — HTML parser closes the tag.
+  // Use the _S helper to build it at runtime.
+  const _S = '</' + 'script>';
+  const _SO = '<' + 'script>';
+
+  const resetScript =
+    _SO +
+    'window.__resetQgisWidget = async function() {' +
+    '  if (!confirm("Remplacer le widget par un nouveau fichier ?")) return;' +
+    '  try {' +
+    '    const data = await grist.docApi.fetchTable("QgisWidgets");' +
+    '    const lastId = data.id[data.id.length - 1];' +
+    '    await grist.docApi.applyUserActions([["RemoveRecord","QgisWidgets",lastId]]);' +
+    '    location.reload();' +
+    '  } catch(e) { alert("Erreur: " + e.message); }' +
+    '};' +
+    _S;
+
+  const escapeHatch =
+    '<div id="qgis-widget-escape" style="' +
+    'position:fixed;top:4px;right:4px;z-index:99999;' +
+    'background:rgba(255,255,255,0.92);border-radius:6px;' +
+    'display:flex;gap:4px;padding:4px 8px;box-shadow:0 2px 8px rgba(0,0,0,0.12);">' +
+    '<button onclick="window.__resetQgisWidget()" style="' +
+    'font-size:11px;color:#0369a1;background:none;border:1px solid #0369a1;' +
+    'border-radius:4px;padding:3px 10px;cursor:pointer;font-family:Inter,sans-serif;font-weight:600;">' +
+    '\u21ba Changer de fichier</button></div>';
+
+  const injected = html.replace('</body>', escapeHatch + resetScript + '</body>');
+
+  document.open();
+  document.write(injected);
+  document.close();
+}
+
+</script>
+</body>
+</html>

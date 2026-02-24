@@ -3,40 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calendar - TaskFlow v21</title>
+    <title>Calendar - TaskFlow v15</title>
     <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
     <style>
         :root {
+            /* Primary */
             --primary: #4f46e5;
             --primary-dark: #4338ca;
             --primary-light: #e0e7ff;
+            /* Semantic */
             --success: #10b981;
+            --success-light: #d1fae5;
             --warning: #f59e0b;
+            --warning-light: #fef3c7;
             --danger: #ef4444;
+            --danger-light: #fee2e2;
             --info: #3b82f6;
+            --info-light: #dbeafe;
+            /* Backgrounds */
             --bg: #f8fafc;
             --card-bg: #ffffff;
+            /* Text */
             --text: #1e293b;
             --text-muted: #64748b;
             --text-light: #94a3b8;
+            /* Borders */
             --border: #e2e8f0;
             --border-dark: #cbd5e1;
+            /* Shadows */
             --shadow: 0 1px 3px rgba(0,0,0,0.1);
             --shadow-lg: 0 10px 40px rgba(0,0,0,0.15);
+            /* Layout */
             --panel-width: 340px;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { height: 100%; overflow: hidden; }
-        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; }
 
         /* Header */
-        .header { background: var(--card-bg); border-bottom: 1px solid var(--border); padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; }
+        .header { background: var(--card-bg); border-bottom: 1px solid var(--border); padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-shrink: 0; }
         .header h1 { font-size: 1.25rem; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-        .header-center { display: flex; align-items: center; gap: 8px; flex: 1; justify-content: center; min-width: 0; }
+        .header-center { display: flex; align-items: center; gap: 8px; min-width: 0; }
         .nav-group { display: flex; align-items: center; gap: 4px; }
         .current-period { font-weight: 600; font-size: 0.9rem; min-width: 120px; text-align: center; white-space: nowrap; }
-        .header-right { display: flex; align-items: center; gap: 8px; }
+        .header-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
         .btn { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.8rem; transition: all 0.2s; background: var(--card-bg); color: var(--text); white-space: nowrap; }
         .btn:hover { background: var(--bg); }
@@ -48,8 +59,7 @@
         .view-controls .btn { border: none; background: transparent; padding: 5px 10px; border-radius: 5px; font-size: 0.75rem; }
         .view-controls .btn.active { background: var(--primary); color: white; }
 
-        /* Filters */
-        .filters { display: flex; align-items: center; gap: 4px; }
+        /* Filters (integrated in header) */
         .filter-dropdown { position: relative; }
         .filter-btn { padding: 6px 10px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; font-size: 0.75rem; cursor: pointer; display: flex; align-items: center; gap: 4px; color: var(--text-muted); transition: all 0.15s; white-space: nowrap; }
         .filter-btn:hover { border-color: var(--border-dark); color: var(--text); }
@@ -87,7 +97,7 @@
         .day-events-area { flex: 1; position: relative; overflow: hidden; }
         .week-lanes-container { position: absolute; left: 32px; right: 0; top: 0; bottom: 0; pointer-events: none; overflow: hidden; }
 
-        .event-bar { position: absolute; height: 16px; border-radius: 3px; padding: 0 5px; font-size: 0.6rem; font-weight: 500; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; cursor: pointer; pointer-events: auto; box-shadow: 0 1px 2px rgba(0,0,0,0.15); z-index: 1; transition: transform 0.1s, box-shadow 0.1s; }
+        .event-bar { position: absolute; height: 16px; border-radius: 3px; padding: 0 5px; font-size: 0.6rem; font-weight: 500; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; cursor: pointer; pointer-events: auto; box-shadow: 0 1px 2px rgba(0,0,0,0.15); z-index: 1; transition: transform 0.1s, box-shadow 0.1s; border-left: 3px solid rgba(255,255,255,0.5); }
         .event-bar:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,0.2); z-index: 10; }
         .event-bar.selected { outline: 2px solid var(--primary); outline-offset: 1px; }
         .event-bar.p1 { background: linear-gradient(135deg, var(--danger), #f87171); }
@@ -115,17 +125,28 @@
         .week-header-date { font-size: 1.1rem; font-weight: 600; color: var(--text); cursor: pointer; }
         .week-header-date:hover { color: var(--primary); }
         .week-header-cell.today .week-header-date { background: var(--primary); color: white; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
-        .week-allday { display: grid; grid-template-columns: 50px repeat(7, 1fr); background: var(--card-bg); border-bottom: 1px solid var(--border); min-height: 40px; }
-        .week-allday-label { font-size: 0.6rem; color: var(--text-light); padding: 4px; text-align: center; border-right: 1px solid var(--border); background: var(--bg); display: flex; align-items: center; justify-content: center; }
-        .week-allday-cell { border-right: 1px solid var(--border); padding: 4px; cursor: pointer; min-height: 36px; }
+        .week-allday { display: grid; background: var(--card-bg); border-bottom: 1px solid var(--border); min-height: 80px; position: relative; }
+        .week-allday-label { font-size: 0.6rem; color: var(--text-light); padding: 4px; text-align: center; border-right: 1px solid var(--border); background: var(--bg); display: flex; align-items: flex-start; justify-content: center; padding-top: 8px; }
+        .week-allday-cells { display: contents; }
+        .week-allday-cell { border-right: 1px solid var(--border); cursor: pointer; min-height: 70px; }
         .week-allday-cell:last-child { border-right: none; }
         .week-allday-cell:hover { background: rgba(79, 70, 229, 0.03); }
         .week-allday-cell.weekend { background: #fef2f2; }
-        .week-allday-event { color: white; font-size: 0.65rem; padding: 2px 6px; border-radius: 3px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; font-weight: 500; }
-        .week-allday-event.p1 { background: var(--danger); }
-        .week-allday-event.p2 { background: var(--warning); }
-        .week-allday-event.p3 { background: var(--info); }
-        .week-allday-event.p4 { background: var(--text-muted); }
+        .week-events-container { position: absolute; left: 50px; right: 0; top: 4px; bottom: 4px; pointer-events: none; }
+        .week-event-bar { position: absolute; height: 18px; border-radius: 3px; padding: 0 6px; font-size: 0.65rem; font-weight: 500; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; cursor: pointer; pointer-events: auto; box-shadow: 0 1px 2px rgba(0,0,0,0.15); transition: transform 0.1s, box-shadow 0.1s; border-left: 3px solid rgba(255,255,255,0.5); }
+        .week-event-bar:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,0.2); z-index: 10; }
+        .week-event-bar.selected { outline: 2px solid var(--primary); outline-offset: 1px; }
+        .week-event-bar.p1 { background: linear-gradient(135deg, var(--danger), #f87171); }
+        .week-event-bar.p2 { background: linear-gradient(135deg, var(--warning), #fbbf24); }
+        .week-event-bar.p3 { background: linear-gradient(135deg, var(--info), #60a5fa); }
+        .week-event-bar.p4 { background: linear-gradient(135deg, var(--text-muted), #94a3b8); }
+        .week-event-bar.milestone { background: transparent !important; box-shadow: none; color: var(--text); }
+        .week-event-bar.milestone::before { content: '◆'; margin-right: 3px; font-size: 0.7rem; }
+        .week-event-bar.milestone.p1::before { color: var(--danger); }
+        .week-event-bar.milestone.p2::before { color: var(--warning); }
+        .week-event-bar.milestone.p3::before { color: var(--info); }
+        .week-event-bar.milestone.p4::before { color: var(--text-muted); }
+        .week-event-bar.done { opacity: 0.5; }
         .week-timeline { flex: 1; display: grid; grid-template-columns: 50px repeat(7, 1fr); overflow-y: auto; }
         .week-hours { border-right: 1px solid var(--border); background: var(--bg); }
         .week-hour-label { height: 48px; padding: 0 6px; font-size: 0.65rem; color: var(--text-muted); text-align: right; display: flex; align-items: flex-start; justify-content: flex-end; padding-top: 2px; }
@@ -149,7 +170,7 @@
         .mini-day.has-events { background: var(--primary-light); font-weight: 500; }
 
         /* Panel - Slide-in */
-        .panel { position: absolute; top: 0; right: 0; width: var(--panel-width); height: 100%; background: var(--card-bg); border-left: 1px solid var(--border); display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.25s ease; z-index: 10; }
+        .panel { position: absolute; top: 0; right: 0; width: var(--panel-width); height: 100%; background: var(--card-bg); border-left: 1px solid var(--border); display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.25s ease; z-index: 50; }
         .panel.open { transform: translateX(0); }
         .panel-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--bg); gap: 8px; }
         .panel-nav { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
@@ -157,7 +178,6 @@
         .panel-nav-btn:hover { background: var(--bg); color: var(--text); }
         .panel-nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
         .panel-title { font-weight: 600; font-size: 0.9rem; flex: 1; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-        .panel-title-icon { margin-right: 6px; }
         .panel-close { width: 28px; height: 28px; border: none; background: transparent; border-radius: 6px; cursor: pointer; color: var(--text-muted); font-size: 1.1rem; flex-shrink: 0; }
         .panel-close:hover { background: var(--bg); color: var(--text); }
         .panel-content { flex: 1; overflow-y: auto; padding: 16px; }
@@ -175,7 +195,10 @@
 
         .panel-section { margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
         .panel-section:last-child { border-bottom: none; margin-bottom: 0; }
-        .panel-section-title { font-size: 0.7rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+        .panel-section-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin: 0 -16px 12px -16px; background: linear-gradient(135deg, var(--bg) 0%, rgba(79,70,229,0.03) 100%); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+        .panel-section-header:first-child { border-top: none; margin-top: -4px; }
+        .panel-section-title { font-size: 0.7rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0; }
+        .panel-section-badge { font-size: 0.65rem; padding: 2px 6px; background: var(--primary-light); color: var(--primary); border-radius: 10px; font-weight: 600; margin-left: auto; }
         .panel-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
         .panel-stat { background: var(--bg); padding: 12px; border-radius: 8px; text-align: center; }
         .panel-stat-value { font-size: 1.4rem; font-weight: 700; color: var(--primary); }
@@ -234,6 +257,10 @@
         .progress-slider { flex: 1; -webkit-appearance: none; height: 6px; border-radius: 3px; background: var(--border); outline: none; }
         .progress-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--primary); cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
         .progress-value { font-size: 0.85rem; font-weight: 600; color: var(--primary); min-width: 40px; text-align: right; }
+        .progress-presets { display: flex; gap: 6px; margin-top: 8px; }
+        .progress-preset { flex: 1; padding: 6px 4px; font-size: 0.7rem; font-weight: 600; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); cursor: pointer; transition: all 0.15s; text-align: center; }
+        .progress-preset:hover { background: var(--primary-light); border-color: var(--primary); }
+        .progress-preset.active { background: var(--primary); color: white; border-color: var(--primary); }
 
         /* Multi-select (Assignés, Dépendances) */
         .multi-select { position: relative; }
@@ -274,6 +301,35 @@
         .time-bar-fill { height: 100%; background: var(--success); transition: width 0.3s; }
         .time-bar-fill.over { background: var(--danger); }
 
+        /* Dates inline */
+        .dates-inline { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--bg); border-radius: 8px; }
+        .dates-inline input { border: none; background: transparent; padding: 0; font-size: 0.85rem; color: var(--text); width: 120px; text-align: center; }
+        .dates-inline input:focus { outline: none; }
+        .dates-inline .dates-arrow { color: var(--text-muted); font-size: 0.85rem; }
+        .dates-inline .today-btn { padding: 4px 8px; font-size: 0.7rem; background: var(--primary-light); color: var(--primary); border: none; border-radius: 4px; cursor: pointer; margin-left: auto; transition: all 0.15s; }
+        .dates-inline .today-btn:hover { background: var(--primary); color: white; }
+
+        /* Project select with dot */
+        .project-select-wrap { display: flex; align-items: center; gap: 8px; }
+        .project-color-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+
+        /* Subtasks/Checklist */
+        .subtask-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+        .subtask-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--bg); border-radius: 6px; border: 1px solid var(--border); transition: all 0.15s; }
+        .subtask-item:hover { border-color: var(--primary-light); }
+        .subtask-item.done { background: var(--success-light); border-color: var(--success); }
+        .subtask-item.done .subtask-text { text-decoration: line-through; color: var(--text-muted); }
+        .subtask-checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary); }
+        .subtask-text { flex: 1; font-size: 0.85rem; }
+        .subtask-remove { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1rem; padding: 0 4px; opacity: 0; transition: opacity 0.15s; }
+        .subtask-item:hover .subtask-remove { opacity: 1; }
+        .subtask-remove:hover { color: var(--danger); }
+        .subtask-add { display: flex; gap: 6px; }
+        .subtask-add input { flex: 1; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.85rem; }
+        .subtask-add input:focus { outline: none; border-color: var(--primary); }
+        .subtask-add button { padding: 8px 12px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+        .subtask-add button:hover { background: var(--primary-dark); }
+
         /* Dependencies Section */
         .deps-display { margin-top: 10px; }
         .deps-group { margin-bottom: 10px; }
@@ -313,11 +369,16 @@
 
         @media (max-width: 900px) { :root { --panel-width: 320px; } .year-grid { grid-template-columns: repeat(3, 1fr); } }
         @media (max-width: 700px) { :root { --panel-width: 100%; } .grid-container.panel-open { margin-right: 0; } .panel { left: 0; width: 100%; } .year-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 12px; } .legend { display: none; } }
-        
+        /* Responsive pour header unifié */
+        @media (max-width: 1100px) {
+            .header { flex-wrap: wrap; }
+            .header-right { order: 3; width: 100%; justify-content: flex-end; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+        }
+
         /* GEN-03: Export Print/PDF */
         @media print {
             body { background: white !important; }
-            .header, .panel, .demo-badge, .filter-dropdown, .btn { display: none !important; }
+            .header, .panel, .demo-badge { display: none !important; }
             .main-content { padding: 0 !important; }
             .grid-container { overflow: visible !important; margin: 0 !important; }
             .month-grid, .week-grid, .year-grid { overflow: visible !important; }
@@ -328,7 +389,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>📅 Calendrier</h1>
+        <h1><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg> Calendar</h1>
         <div class="header-center">
             <div class="nav-group">
                 <button class="btn btn-icon" onclick="navigate(-1)">◀</button>
@@ -345,25 +406,23 @@
             </div>
         </div>
         <div class="header-right">
-            <div class="filters">
-                <div class="filter-dropdown">
-                    <div class="filter-btn" id="filterProjectBtn" onclick="toggleFilter('project')">Projets ▾</div>
-                    <div class="filter-menu" id="filterProjectMenu"></div>
-                </div>
-                <div class="filter-dropdown">
-                    <div class="filter-btn" id="filterPriorityBtn" onclick="toggleFilter('priority')">Priorités ▾</div>
-                    <div class="filter-menu" id="filterPriorityMenu"></div>
-                </div>
-                <div class="filter-dropdown">
-                    <div class="filter-btn" id="filterAssigneeBtn" onclick="toggleFilter('assignee')">Équipe ▾</div>
-                    <div class="filter-menu" id="filterAssigneeMenu"></div>
-                </div>
+            <div class="filter-dropdown">
+                <div class="filter-btn" id="filterProjectBtn" onclick="toggleFilter('project')">Projets ▾</div>
+                <div class="filter-menu" id="filterProjectMenu"></div>
+            </div>
+            <div class="filter-dropdown">
+                <div class="filter-btn" id="filterPriorityBtn" onclick="toggleFilter('priority')">Priorités ▾</div>
+                <div class="filter-menu" id="filterPriorityMenu"></div>
+            </div>
+            <div class="filter-dropdown">
+                <div class="filter-btn" id="filterAssigneeBtn" onclick="toggleFilter('assignee')">Équipe ▾</div>
+                <div class="filter-menu" id="filterAssigneeMenu"></div>
             </div>
             <div class="filter-dropdown" id="exportDropdown">
-                <button class="btn" onclick="toggleFilter('export')">📥 Exporter ▾</button>
+                <button class="btn" onclick="toggleFilter('export')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Exporter ▾</button>
                 <div class="filter-menu" id="filterExportMenu">
-                    <div class="filter-option" onclick="exportPrint()">🖨️ Imprimer / PDF</div>
-                    <div class="filter-option" onclick="exportPNG()">🖼️ Image PNG</div>
+                    <div class="filter-option" onclick="exportPrint()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg> Imprimer / PDF</div>
+                    <div class="filter-option" onclick="exportPNG()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg> Image PNG</div>
                 </div>
             </div>
             <button class="btn primary" onclick="openCreatePanel()">+ Tâche</button>
@@ -391,7 +450,7 @@
         <div class="legend-item"><span style="color:var(--text)">◆</span>Jalon</div>
     </div>
 
-    <div class="save-indicator" id="saveIndicator">✓ Enregistré</div>
+    <div class="save-indicator" id="saveIndicator">Enregistré</div>
     <div class="toast-container" id="toastContainer"></div>
 
     <script>
@@ -407,7 +466,7 @@
         const PRIORITY_LABELS = { 1: 'Critique', 2: 'Haute', 3: 'Moyenne', 4: 'Basse' };
         const PRIORITY_COLORS = { 1: '#ef4444', 2: '#f59e0b', 3: '#3b82f6', 4: '#64748b' };
         const STATUS_CONFIG = { todo: 'À faire', inprogress: 'En cours', review: 'En revue', done: 'Terminé' };
-        const TYPE_ICONS = { tache: '📋', jalon: '◆', reunion: '👥' };
+        const TYPE_ICONS = { tache: '', jalon: '◆', reunion: '' };
         const MONTHS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
         const MONTHS_SHORT = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'];
         const DAYS = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
@@ -417,7 +476,16 @@
         // STATE
         // ═══════════════════════════════════════════════════════════════════════
         let tasks = [], team = [], projects = [], gristReady = false;
-        let currentView = 'month', currentDate = new Date(), selectedDate = null, selectedTaskId = null;
+        let currentView = localStorage.getItem('taskflow_calendar_view') || 'month', currentDate = new Date(), selectedDate = null, selectedTaskId = null;
+
+        // VIEW_CONFIG: Configuration centralisée des vues (harmonisée avec Gantt)
+        const VIEW_CONFIG = {
+            month:    { label: 'Mois',     navStep: 'month',  gridId: 'monthGrid', display: 'flex' },
+            biweek:   { label: '2 Sem',    navStep: 14,       gridId: 'weekGrid',  display: 'flex' },
+            week:     { label: 'Semaine',  navStep: 7,        gridId: 'weekGrid',  display: 'flex' },
+            workweek: { label: '5 Jours',  navStep: 7,        gridId: 'weekGrid',  display: 'flex' },
+            year:     { label: 'Année',    navStep: 'year',   gridId: 'yearGrid',  display: 'grid' }
+        };
         let panelState = { open: false, mode: null, periodType: null, periodDate: null, periodTasks: [], taskId: null, taskIndex: -1, isNew: false, editData: null };
         let filters = { project: [], priority: [], assignee: [] };  // GEN-02: Ajout assignee pour compatibilité inter-widgets
         let saveTimeout = null;
@@ -646,22 +714,25 @@
         // ═══════════════════════════════════════════════════════════════════════
         function setView(v) {
             currentView = v;
+            localStorage.setItem('taskflow_calendar_view', v);
             document.querySelectorAll('.view-controls .btn').forEach(b => b.classList.remove('active'));
             const btnId = 'btn' + v.charAt(0).toUpperCase() + v.slice(1);
             const btn = document.getElementById(btnId);
             if (btn) btn.classList.add('active');
-            document.getElementById('monthGrid').style.display = v === 'month' ? 'flex' : 'none';
-            document.getElementById('weekGrid').style.display = (v === 'week' || v === 'biweek' || v === 'workweek') ? 'flex' : 'none';
-            document.getElementById('yearGrid').style.display = v === 'year' ? 'grid' : 'none';
+            // Utilise VIEW_CONFIG pour gérer l'affichage des grilles
+            Object.keys(VIEW_CONFIG).forEach(key => {
+                const cfg = VIEW_CONFIG[key];
+                const el = document.getElementById(cfg.gridId);
+                if (el) el.style.display = key === v ? cfg.display : 'none';
+            });
             render();
         }
         
         function navigate(dir) {
-            if (currentView === 'month') currentDate.setMonth(currentDate.getMonth() + dir);
-            else if (currentView === 'week') currentDate.setDate(currentDate.getDate() + dir * 7);
-            else if (currentView === 'biweek') currentDate.setDate(currentDate.getDate() + dir * 14);
-            else if (currentView === 'workweek') currentDate.setDate(currentDate.getDate() + dir * 7);
-            else if (currentView === 'year') currentDate.setFullYear(currentDate.getFullYear() + dir);
+            const cfg = VIEW_CONFIG[currentView];
+            if (cfg.navStep === 'month') currentDate.setMonth(currentDate.getMonth() + dir);
+            else if (cfg.navStep === 'year') currentDate.setFullYear(currentDate.getFullYear() + dir);
+            else currentDate.setDate(currentDate.getDate() + dir * cfg.navStep);
             render();
         }
         
@@ -780,7 +851,8 @@
                         
                         const bar = document.createElement('div');
                         bar.className = `event-bar p${p} ${isMilestone ? 'milestone' : ''} ${isDone ? 'done' : ''} ${task.id === selectedTaskId ? 'selected' : ''}`;
-                        bar.style.cssText = `left:${left}; width:${width}; top:${top};`;
+                        const projectColor = task.projet ? getProjectColor(task.projet) : null;
+                        bar.style.cssText = `left:${left}; width:${width}; top:${top};${projectColor ? ` border-left-color:${projectColor};` : ''}`;
                         bar.textContent = task.titre || 'Sans titre';
                         bar.onclick = (e) => { e.stopPropagation(); openTaskPanel(task.id); };
                         lanesContainer.appendChild(bar);
@@ -800,29 +872,82 @@
             });
         }
         
+        function renderWeekEventBars(containerId, ft, weekStart, numDays) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            // Collect tasks that overlap this period
+            const periodEnd = addDays(weekStart, numDays);
+            const tasksInPeriod = [];
+
+            ft.forEach(t => {
+                const s = gristToDate(t.dateDebut) || gristToDate(t.dateEcheance);
+                const e = gristToDate(t.dateEcheance) || s;
+                if (!s) return;
+
+                const taskStart = startOfDay(s);
+                const taskEnd = endOfDay(e);
+
+                if (taskEnd >= weekStart && taskStart < periodEnd) {
+                    tasksInPeriod.push({ task: t, start: taskStart, end: taskEnd });
+                }
+            });
+
+            // Sort by start date, then by duration (longer first)
+            tasksInPeriod.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+
+            // Allocate lanes
+            const lanes = [];
+            const maxLanes = 3;
+
+            tasksInPeriod.forEach(({ task, start, end }) => {
+                const barStart = Math.max(start.getTime(), weekStart.getTime());
+                const barEnd = Math.min(end.getTime(), periodEnd.getTime() - 1);
+                const startDay = Math.floor((barStart - weekStart.getTime()) / 86400000);
+                const endDay = Math.floor((barEnd - weekStart.getTime()) / 86400000);
+
+                let lane = lanes.findIndex(l => l <= startDay);
+                if (lane === -1) { lane = lanes.length; lanes.push(0); }
+                lanes[lane] = endDay + 1;
+
+                if (lane < maxLanes) {
+                    const p = getPriority(task);
+                    const left = (startDay / numDays * 100) + '%';
+                    const width = ((endDay - startDay + 1) / numDays * 100) + '%';
+                    const top = (lane * 22) + 'px';
+                    const isMilestone = task.type === 'jalon';
+                    const isDone = task.statut === 'done';
+
+                    const bar = document.createElement('div');
+                    bar.className = `week-event-bar p${p} ${isMilestone ? 'milestone' : ''} ${isDone ? 'done' : ''} ${task.id === selectedTaskId ? 'selected' : ''}`;
+                    const projectColor = task.projet ? getProjectColor(task.projet) : null;
+                    bar.style.cssText = `left:${left}; width:${width}; top:${top};${projectColor ? ` border-left-color:${projectColor};` : ''}`;
+                    bar.textContent = task.titre || 'Sans titre';
+                    bar.onclick = (e) => { e.stopPropagation(); openTaskPanel(task.id); };
+                    container.appendChild(bar);
+                }
+            });
+        }
+
         function renderWeek() {
             const grid = document.getElementById('weekGrid');
             const ft = getFilteredTasks();
             const weekStart = getWeekStart(currentDate);
-            
-            let headerHtml = '<div class="week-header"><div class="week-header-cell"></div>';
+
+            let headerHtml = '<div class="week-header" style="grid-template-columns: 50px repeat(7, 1fr);"><div class="week-header-cell"></div>';
             for (let d = 0; d < 7; d++) {
                 const date = addDays(weekStart, d);
                 const classes = ['week-header-cell', isWeekend(date) ? 'weekend' : '', isToday(date) ? 'today' : ''].filter(Boolean).join(' ');
                 headerHtml += `<div class="${classes}"><div class="week-header-day">${DAYS[(d + 1) % 7]}</div><div class="week-header-date" onclick="openDayPanel(new Date(${date.getTime()}))">${date.getDate()}</div></div>`;
             }
             headerHtml += '</div>';
-            
-            let alldayHtml = '<div class="week-allday"><div class="week-allday-label">Journée</div>';
+
+            let alldayHtml = '<div class="week-allday" style="grid-template-columns: 50px repeat(7, 1fr);"><div class="week-allday-label">Jour</div>';
             for (let d = 0; d < 7; d++) {
                 const date = addDays(weekStart, d);
-                const dayTasks = ft.filter(t => {
-                    const s = gristToDate(t.dateDebut), e = gristToDate(t.dateEcheance) || s;
-                    return s && startOfDay(s) <= date && endOfDay(e || s) >= date;
-                });
-                alldayHtml += `<div class="week-allday-cell ${isWeekend(date) ? 'weekend' : ''}" onclick="openDayPanel(new Date(${date.getTime()}))">${dayTasks.slice(0, 3).map(t => `<div class="week-allday-event p${getPriority(t)}" onclick="event.stopPropagation();openTaskPanel(${t.id})">${escapeHtml(t.titre)}</div>`).join('')}</div>`;
+                alldayHtml += `<div class="week-allday-cell ${isWeekend(date) ? 'weekend' : ''}" onclick="openDayPanel(new Date(${date.getTime()}))"></div>`;
             }
-            alldayHtml += '</div>';
+            alldayHtml += '<div class="week-events-container" id="weekEventsContainer"></div></div>';
             
             let timelineHtml = '<div class="week-timeline"><div class="week-hours">';
             for (let h = 0; h < 24; h++) timelineHtml += `<div class="week-hour-label">${String(h).padStart(2,'0')}:00</div>`;
@@ -836,14 +961,15 @@
             timelineHtml += '</div>';
             
             grid.innerHTML = headerHtml + alldayHtml + timelineHtml;
+            renderWeekEventBars('weekEventsContainer', ft, weekStart, 7);
         }
-        
+
         // CAL-01: Vue 2 semaines (14 jours)
         function renderBiweek() {
             const grid = document.getElementById('weekGrid');
             const ft = getFilteredTasks();
             const weekStart = getWeekStart(currentDate);
-            
+
             let headerHtml = '<div class="week-header" style="grid-template-columns: 50px repeat(14, 1fr);"><div class="week-header-cell"></div>';
             for (let d = 0; d < 14; d++) {
                 const date = addDays(weekStart, d);
@@ -851,18 +977,14 @@
                 headerHtml += `<div class="${classes}" style="font-size:0.65rem;"><div class="week-header-day">${DAYS[(d + 1) % 7].charAt(0)}</div><div class="week-header-date" onclick="openDayPanel(new Date(${date.getTime()}))">${date.getDate()}</div></div>`;
             }
             headerHtml += '</div>';
-            
+
             let alldayHtml = '<div class="week-allday" style="grid-template-columns: 50px repeat(14, 1fr);"><div class="week-allday-label">Jour</div>';
             for (let d = 0; d < 14; d++) {
                 const date = addDays(weekStart, d);
-                const dayTasks = ft.filter(t => {
-                    const s = gristToDate(t.dateDebut), e = gristToDate(t.dateEcheance) || s;
-                    return s && startOfDay(s) <= date && endOfDay(e || s) >= date;
-                });
-                alldayHtml += `<div class="week-allday-cell ${isWeekend(date) ? 'weekend' : ''}" onclick="openDayPanel(new Date(${date.getTime()}))">${dayTasks.slice(0, 2).map(t => `<div class="week-allday-event p${getPriority(t)}" style="font-size:0.6rem;padding:1px 3px;" onclick="event.stopPropagation();openTaskPanel(${t.id})">${escapeHtml(t.titre).substring(0,8)}${t.titre.length > 8 ? '...' : ''}</div>`).join('')}</div>`;
+                alldayHtml += `<div class="week-allday-cell ${isWeekend(date) ? 'weekend' : ''}" onclick="openDayPanel(new Date(${date.getTime()}))"></div>`;
             }
-            alldayHtml += '</div>';
-            
+            alldayHtml += '<div class="week-events-container" id="biweekEventsContainer"></div></div>';
+
             let timelineHtml = '<div class="week-timeline" style="grid-template-columns: 50px repeat(14, 1fr);"><div class="week-hours">';
             for (let h = 0; h < 24; h++) timelineHtml += `<div class="week-hour-label">${String(h).padStart(2,'0')}:00</div>`;
             timelineHtml += '</div>';
@@ -873,8 +995,9 @@
                 timelineHtml += '</div>';
             }
             timelineHtml += '</div>';
-            
+
             grid.innerHTML = headerHtml + alldayHtml + timelineHtml;
+            renderWeekEventBars('biweekEventsContainer', ft, weekStart, 14);
         }
         
         // CAL-02: Vue 5 jours (semaine travaillée)
@@ -882,7 +1005,7 @@
             const grid = document.getElementById('weekGrid');
             const ft = getFilteredTasks();
             const weekStart = getWeekStart(currentDate);
-            
+
             let headerHtml = '<div class="week-header" style="grid-template-columns: 50px repeat(5, 1fr);"><div class="week-header-cell"></div>';
             for (let d = 0; d < 5; d++) {
                 const date = addDays(weekStart, d);
@@ -890,18 +1013,14 @@
                 headerHtml += `<div class="${classes}"><div class="week-header-day">${DAYS_FULL[(d + 1) % 7]}</div><div class="week-header-date" onclick="openDayPanel(new Date(${date.getTime()}))">${date.getDate()} ${MONTHS_SHORT[date.getMonth()]}</div></div>`;
             }
             headerHtml += '</div>';
-            
-            let alldayHtml = '<div class="week-allday" style="grid-template-columns: 50px repeat(5, 1fr);"><div class="week-allday-label">Journée</div>';
+
+            let alldayHtml = '<div class="week-allday" style="grid-template-columns: 50px repeat(5, 1fr);"><div class="week-allday-label">Jour</div>';
             for (let d = 0; d < 5; d++) {
                 const date = addDays(weekStart, d);
-                const dayTasks = ft.filter(t => {
-                    const s = gristToDate(t.dateDebut), e = gristToDate(t.dateEcheance) || s;
-                    return s && startOfDay(s) <= date && endOfDay(e || s) >= date;
-                });
-                alldayHtml += `<div class="week-allday-cell" onclick="openDayPanel(new Date(${date.getTime()}))">${dayTasks.slice(0, 4).map(t => `<div class="week-allday-event p${getPriority(t)}" onclick="event.stopPropagation();openTaskPanel(${t.id})">${escapeHtml(t.titre)}</div>`).join('')}</div>`;
+                alldayHtml += `<div class="week-allday-cell" onclick="openDayPanel(new Date(${date.getTime()}))"></div>`;
             }
-            alldayHtml += '</div>';
-            
+            alldayHtml += '<div class="week-events-container" id="workweekEventsContainer"></div></div>';
+
             let timelineHtml = '<div class="week-timeline" style="grid-template-columns: 50px repeat(5, 1fr);"><div class="week-hours">';
             for (let h = 0; h < 24; h++) timelineHtml += `<div class="week-hour-label">${String(h).padStart(2,'0')}:00</div>`;
             timelineHtml += '</div>';
@@ -912,8 +1031,9 @@
                 timelineHtml += '</div>';
             }
             timelineHtml += '</div>';
-            
+
             grid.innerHTML = headerHtml + alldayHtml + timelineHtml;
+            renderWeekEventBars('workweekEventsContainer', ft, weekStart, 5);
         }
         
         function renderYear() {
@@ -1014,7 +1134,7 @@
                     titre: '', description: '', type: 'tache', priorite: '3', statut: 'todo', progression: 0,
                     dateDebut: dateToGrist(targetDate), dateEcheance: dateToGrist(addDays(targetDate, 7)),
                     projet: projects.length > 0 ? projects[0].id : null,
-                    assignees: [], dependDe: [], tags: [], estimationH: null, tempsPasse: null
+                    assignees: [], dependDe: [], tags: [], estimationH: null, tempsPasse: null, subtasks: []
                 }
             };
             renderPanelTask();
@@ -1037,7 +1157,8 @@
                 dependDe: getDependsOn(task),
                 tags: getTags(task),
                 estimationH: task.estimationH || null,
-                tempsPasse: task.tempsPasse || null
+                tempsPasse: task.tempsPasse || null,
+                subtasks: getSubtasks(task)
             };
         }
         
@@ -1061,6 +1182,7 @@
             task.tags = ['L', ...data.tags];
             task.estimationH = data.estimationH;
             task.tempsPasse = data.tempsPasse;
+            task.subtasks = subtasksToJson(data.subtasks);
         }
         
         function backToPeriod() {
@@ -1097,7 +1219,7 @@
             if (periodType === 'day') title = formatDate(periodDate, 'full');
             else if (periodType === 'week') title = `Semaine ${getWeekNumber(periodDate)}`;
             
-            header.innerHTML = `<div class="panel-nav"><span class="panel-title">📅 ${escapeHtml(title)}</span></div><button class="panel-close" onclick="closePanel()">×</button>`;
+            header.innerHTML = `<div class="panel-nav"><span class="panel-title">${escapeHtml(title)}</span></div><button class="panel-close" onclick="closePanel()">×</button>`;
             
             const done = periodTasks.filter(t => t.statut === 'done').length;
             const total = periodTasks.length;
@@ -1141,14 +1263,13 @@
             if (!data) { backToPeriod(); return; }
             
             const canNavigate = panelState.periodTasks.length > 1 && !panelState.isNew;
-            const typeIcon = TYPE_ICONS[data.type] || '📋';
-            const titleText = panelState.isNew ? 'Nouvelle tâche' : (data.titre || 'Sans titre');
-            
+            const navLabel = panelState.isNew ? 'Nouvelle tâche' : (panelState.periodTasks.length > 1 ? `${panelState.taskIndex + 1}/${panelState.periodTasks.length}` : '');
+
             header.innerHTML = `
                 <div class="panel-nav">
                     <button class="panel-nav-btn" onclick="backToPeriod()" title="Retour">←</button>
                     <button class="panel-nav-btn" onclick="navigatePanelTask(-1)" ${!canNavigate ? 'disabled' : ''}>◀</button>
-                    <span class="panel-title"><span class="panel-title-icon">${typeIcon}</span>${escapeHtml(titleText)}</span>
+                    ${navLabel ? `<span class="panel-title">${navLabel}</span>` : ''}
                     <button class="panel-nav-btn" onclick="navigatePanelTask(1)" ${!canNavigate ? 'disabled' : ''}>▶</button>
                 </div>
                 <button class="panel-close" onclick="closePanel()">×</button>
@@ -1189,149 +1310,85 @@
             
             // Tags chips
             const tagsChips = data.tags.map(tag => `<span class="tag-chip">#${escapeHtml(tag)}<span class="remove" onclick="removeTag('${escapeHtml(tag)}')">×</span></span>`).join('');
-            
+
             // Time tracking
             const estim = data.estimationH || 0;
             const passe = data.tempsPasse || 0;
             const timePercent = estim > 0 ? Math.min((passe / estim) * 100, 100) : 0;
             const timeOver = passe > estim && estim > 0;
-            
+
+            // Project color
+            const currentProject = projects.find(p => p.id === data.projet);
+            const projectColor = currentProject?.couleur || '#94a3b8';
+            const subtasksDone = (data.subtasks || []).filter(s => s.done).length;
+            const subtasksTotal = (data.subtasks || []).length;
+
             content.innerHTML = `
                 <div class="type-selector">
-                    <div class="type-option ${data.type === 'tache' ? 'selected' : ''}" onclick="updateField('type','tache')"><span class="type-option-icon">📋</span>Tâche</div>
-                    <div class="type-option ${data.type === 'jalon' ? 'selected' : ''}" onclick="updateField('type','jalon')"><span class="type-option-icon">◆</span>Jalon</div>
-                    <div class="type-option ${data.type === 'reunion' ? 'selected' : ''}" onclick="updateField('type','reunion')"><span class="type-option-icon">👥</span>Réunion</div>
+                    <div class="type-option ${data.type === 'tache' ? 'selected' : ''}" onclick="updateField('type','tache')">Tâche</div>
+                    <div class="type-option ${data.type === 'jalon' ? 'selected' : ''}" onclick="updateField('type','jalon')">Jalon</div>
+                    <div class="type-option ${data.type === 'reunion' ? 'selected' : ''}" onclick="updateField('type','reunion')">Réunion</div>
                 </div>
-                
+
                 <div class="form-group">
                     <input type="text" class="form-input title-input" id="taskTitle" placeholder="Titre de la tâche..." value="${escapeHtml(data.titre)}" oninput="updateField('titre', this.value, true)">
                 </div>
-                
+
                 <div class="panel-section">
+                    <div class="panel-section-header"><span class="panel-section-title">Planification</span></div>
                     ${data.type === 'jalon' ? `
-                        <div class="form-group"><label class="form-label">Date</label><input type="date" class="form-input" value="${s ? formatDate(s, 'iso') : ''}" onchange="updateField('dateDebut', this.value); updateField('dateEcheance', this.value)"></div>
+                        <div class="form-group"><div class="dates-inline"><input type="date" value="${s ? formatDate(s, 'iso') : ''}" onchange="updateField('dateDebut', this.value); updateField('dateEcheance', this.value)"><button class="today-btn" onclick="setTodayDate()">Aujourd'hui</button></div></div>
                     ` : `
-                        <div class="form-row">
-                            <div class="form-group"><label class="form-label">Début</label><input type="date" class="form-input" value="${s ? formatDate(s, 'iso') : ''}" onchange="updateField('dateDebut', this.value)"></div>
-                            <div class="form-group"><label class="form-label">Fin</label><input type="date" class="form-input" value="${e ? formatDate(e, 'iso') : ''}" onchange="updateField('dateEcheance', this.value)"></div>
-                        </div>
+                        <div class="form-group"><div class="dates-inline"><input type="date" value="${s ? formatDate(s, 'iso') : ''}" onchange="updateField('dateDebut', this.value)"><span class="dates-arrow">→</span><input type="date" value="${e ? formatDate(e, 'iso') : ''}" onchange="updateField('dateEcheance', this.value)"><button class="today-btn" onclick="setTodayDate()">Auj.</button></div></div>
                     `}
-                    <div class="form-group">
-                        <label class="form-label">Projet</label>
-                        <select class="form-select" onchange="updateField('projet', parseInt(this.value) || null)">
-                            <option value="">Aucun projet</option>
-                            ${projectOptions}
-                        </select>
-                    </div>
+                    <div class="form-group"><div class="project-select-wrap"><span class="project-color-dot" style="background:${projectColor}"></span><select class="form-select" onchange="updateField('projet', parseInt(this.value) || null)"><option value="">Aucun projet</option>${projectOptions}</select></div></div>
                 </div>
-                
+
                 <div class="panel-section">
-                    <div class="form-group">
-                        <label class="form-label">Priorité</label>
-                        <div class="priority-selector">
-                            <div class="priority-pill p1 ${data.priorite == '1' ? 'selected' : ''}" onclick="updateField('priorite','1')">Critique</div>
-                            <div class="priority-pill p2 ${data.priorite == '2' ? 'selected' : ''}" onclick="updateField('priorite','2')">Haute</div>
-                            <div class="priority-pill p3 ${data.priorite == '3' ? 'selected' : ''}" onclick="updateField('priorite','3')">Moyenne</div>
-                            <div class="priority-pill p4 ${data.priorite == '4' ? 'selected' : ''}" onclick="updateField('priorite','4')">Basse</div>
-                        </div>
-                    </div>
+                    <div class="panel-section-header"><span class="panel-section-title">État</span></div>
+                    <div class="form-group"><div class="priority-selector">
+                        <div class="priority-pill p1 ${data.priorite == '1' ? 'selected' : ''}" onclick="updateField('priorite','1')">Critique</div>
+                        <div class="priority-pill p2 ${data.priorite == '2' ? 'selected' : ''}" onclick="updateField('priorite','2')">Haute</div>
+                        <div class="priority-pill p3 ${data.priorite == '3' ? 'selected' : ''}" onclick="updateField('priorite','3')">Moyenne</div>
+                        <div class="priority-pill p4 ${data.priorite == '4' ? 'selected' : ''}" onclick="updateField('priorite','4')">Basse</div>
+                    </div></div>
                     ${data.type !== 'jalon' ? `
-                        <div class="form-group">
-                            <label class="form-label">Statut</label>
-                            <div class="status-selector">
-                                <div class="status-pill ${data.statut === 'todo' ? 'selected' : ''}" onclick="updateField('statut','todo')">À faire</div>
-                                <div class="status-pill ${data.statut === 'inprogress' ? 'selected' : ''}" onclick="updateField('statut','inprogress')">En cours</div>
-                                <div class="status-pill ${data.statut === 'review' ? 'selected' : ''}" onclick="updateField('statut','review')">En revue</div>
-                                <div class="status-pill ${data.statut === 'done' ? 'selected' : ''}" onclick="updateField('statut','done')">Terminé</div>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Progression</label>
-                            <div class="progress-container">
-                                <input type="range" class="progress-slider" min="0" max="100" value="${data.progression}" oninput="document.getElementById('progressValue').textContent=this.value+'%'" onchange="updateField('progression', parseInt(this.value))">
-                                <span class="progress-value" id="progressValue">${data.progression}%</span>
-                            </div>
-                        </div>
+                        <div class="form-group"><div class="status-selector">
+                            <div class="status-pill ${data.statut === 'todo' ? 'selected' : ''}" onclick="updateField('statut','todo')">À faire</div>
+                            <div class="status-pill ${data.statut === 'inprogress' ? 'selected' : ''}" onclick="updateField('statut','inprogress')">En cours</div>
+                            <div class="status-pill ${data.statut === 'review' ? 'selected' : ''}" onclick="updateField('statut','review')">En revue</div>
+                            <div class="status-pill ${data.statut === 'done' ? 'selected' : ''}" onclick="updateField('statut','done')">Terminé</div>
+                        </div></div>
+                        <div class="form-group"><div class="progress-container"><input type="range" class="progress-slider" min="0" max="100" value="${data.progression}" oninput="document.getElementById('progressValue').textContent=this.value+'%'" onchange="updateField('progression', parseInt(this.value))"><span class="progress-value" id="progressValue">${data.progression}%</span></div><div class="progress-presets"><div class="progress-preset ${data.progression === 0 ? 'active' : ''}" onclick="setProgressPreset(0)">0%</div><div class="progress-preset ${data.progression === 25 ? 'active' : ''}" onclick="setProgressPreset(25)">25%</div><div class="progress-preset ${data.progression === 50 ? 'active' : ''}" onclick="setProgressPreset(50)">50%</div><div class="progress-preset ${data.progression === 75 ? 'active' : ''}" onclick="setProgressPreset(75)">75%</div><div class="progress-preset ${data.progression === 100 ? 'active' : ''}" onclick="setProgressPreset(100)">100%</div></div></div>
                     ` : ''}
                 </div>
-                
+
                 <div class="panel-section">
-                    <div class="form-group">
-                        <label class="form-label">Assignés</label>
-                        <div class="multi-select" id="assigneesSelect">
-                            <div class="multi-select-trigger" onclick="toggleMultiSelect('assigneesSelect')">
-                                <div class="multi-select-values">${assigneesChips || '<span class="multi-select-placeholder">Sélectionner...</span>'}</div>
-                                <span class="multi-select-arrow">▾</span>
-                            </div>
-                            <div class="multi-select-dropdown">${assigneesOptions || '<div class="multi-select-empty">Aucun membre</div>'}</div>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Dépend de</label>
-                        <div class="multi-select" id="depsSelect">
-                            <div class="multi-select-trigger" onclick="toggleMultiSelect('depsSelect')">
-                                <div class="multi-select-values">${depsChips || '<span class="multi-select-placeholder">Sélectionner...</span>'}</div>
-                                <span class="multi-select-arrow">▾</span>
-                            </div>
-                            <div class="multi-select-dropdown">${depsOptions || '<div class="multi-select-empty">Aucune tâche</div>'}</div>
-                        </div>
-                        ${blockedHtml}
-                    </div>
+                    <div class="panel-section-header"><span class="panel-section-title">Équipe</span></div>
+                    <div class="form-group"><div class="multi-select" id="assigneesSelect"><div class="multi-select-trigger" onclick="toggleMultiSelect('assigneesSelect')"><div class="multi-select-values">${assigneesChips || '<span class="multi-select-placeholder">Assigner à...</span>'}</div><span class="multi-select-arrow">▾</span></div><div class="multi-select-dropdown">${assigneesOptions || '<div class="multi-select-empty">Aucun membre</div>'}</div></div></div>
+                    <div class="form-group"><div class="multi-select" id="depsSelect"><div class="multi-select-trigger" onclick="toggleMultiSelect('depsSelect')"><div class="multi-select-values">${depsChips || '<span class="multi-select-placeholder">Dépendances...</span>'}</div><span class="multi-select-arrow">▾</span></div><div class="multi-select-dropdown">${depsOptions || '<div class="multi-select-empty">Aucune</div>'}</div></div>${blockedHtml}</div>
                 </div>
-                
+
                 <div class="panel-section">
-                    <div class="form-group">
-                        <label class="form-label">Temps</label>
-                        <div class="time-row">
-                            <div class="time-group">
-                                <label>Estimé</label>
-                                <div class="time-input-wrap">
-                                    <input type="number" min="0" step="0.5" value="${estim || ''}" placeholder="0" onchange="updateField('estimationH', parseFloat(this.value) || null)">
-                                    <span>h</span>
-                                </div>
-                            </div>
-                            <div class="time-group">
-                                <label>Passé</label>
-                                <div class="time-input-wrap">
-                                    <input type="number" min="0" step="0.5" value="${passe || ''}" placeholder="0" onchange="updateField('tempsPasse', parseFloat(this.value) || null)">
-                                    <span>h</span>
-                                </div>
-                            </div>
-                        </div>
-                        ${estim > 0 ? `<div class="time-bar"><div class="time-bar-fill ${timeOver ? 'over' : ''}" style="width:${timePercent}%"></div></div>` : ''}
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Tags</label>
-                        <div class="tags-input" onclick="document.getElementById('tagInput').focus()">
-                            ${tagsChips}
-                            <input type="text" id="tagInput" placeholder="${data.tags.length ? '' : 'Ajouter...'}" onkeydown="handleTagKeydown(event)">
-                        </div>
-                    </div>
+                    <div class="panel-section-header"><span class="panel-section-title">Checklist</span>${subtasksTotal > 0 ? `<span class="panel-section-badge">${subtasksDone}/${subtasksTotal}</span>` : ''}</div>
+                    <div class="subtask-list">${(data.subtasks || []).map(st => `<div class="subtask-item ${st.done ? 'done' : ''}"><input type="checkbox" class="subtask-checkbox" ${st.done ? 'checked' : ''} onchange="toggleSubtask(${st.id})"><span class="subtask-text">${escapeHtml(st.text)}</span><button class="subtask-remove" onclick="removeSubtask(${st.id})">×</button></div>`).join('')}</div>
+                    <div class="subtask-add"><input type="text" id="newSubtaskInput" placeholder="Ajouter une sous-tâche..." onkeydown="handleSubtaskKeydown(event)"><button onclick="addSubtask()">+</button></div>
                 </div>
-                
-                <div class="form-group">
-                    <label class="form-label">Description</label>
-                    <textarea class="form-textarea" placeholder="Notes, détails..." oninput="updateField('description', this.value, true)">${escapeHtml(data.description)}</textarea>
+
+                <div class="panel-section">
+                    <div class="panel-section-header"><span class="panel-section-title">Détails</span></div>
+                    <div class="form-group"><div class="time-row"><div class="time-group"><label>Estimé</label><div class="time-input-wrap"><input type="number" min="0" step="0.5" value="${estim || ''}" placeholder="0" onchange="updateField('estimationH', parseFloat(this.value) || null)"><span>h</span></div></div><div class="time-group"><label>Passé</label><div class="time-input-wrap"><input type="number" min="0" step="0.5" value="${passe || ''}" placeholder="0" onchange="updateField('tempsPasse', parseFloat(this.value) || null)"><span>h</span></div></div></div>${estim > 0 ? `<div class="time-bar"><div class="time-bar-fill ${timeOver ? 'over' : ''}" style="width:${timePercent}%"></div></div>` : ''}</div>
+                    <div class="form-group"><div class="tags-input" onclick="document.getElementById('tagInput').focus()">${tagsChips}<input type="text" id="tagInput" placeholder="${data.tags.length ? '' : 'Ajouter un tag...'}" onkeydown="handleTagKeydown(event)"></div></div>
+                    <div class="form-group"><textarea class="form-textarea" placeholder="Notes et description..." oninput="updateField('description', this.value, true)">${escapeHtml(data.description)}</textarea></div>
                 </div>
-                
-                ${!panelState.isNew ? `
-                    <div id="deleteSection">
-                        <button class="panel-btn danger" onclick="showDeleteConfirm()">🗑️ Supprimer</button>
-                        <div class="delete-confirm" id="deleteConfirm">
-                            <div class="delete-confirm-text">Supprimer cette tâche ?</div>
-                            <div class="delete-confirm-actions">
-                                <button class="delete-confirm-btn cancel" onclick="hideDeleteConfirm()">Annuler</button>
-                                <button class="delete-confirm-btn confirm" onclick="confirmDelete()">Supprimer</button>
-                            </div>
-                        </div>
-                    </div>
-                ` : ''}
+
+                ${!panelState.isNew ? `<div class="panel-footer-left"><button class="panel-btn danger" onclick="showDeleteConfirm()" style="width:auto;padding:10px 14px">Suppr.</button></div><div class="delete-confirm" id="deleteConfirm"><div class="delete-confirm-text">Supprimer ?</div><div class="delete-confirm-actions"><button class="delete-confirm-btn cancel" onclick="hideDeleteConfirm()">Annuler</button><button class="delete-confirm-btn confirm" onclick="confirmDelete()">Supprimer</button></div></div>` : ''}
             `;
-            
+
             // Footer
             if (panelState.isNew) {
                 const canCreate = data.titre && data.titre.trim().length > 0;
-                footer.innerHTML = `<div class="panel-footer-right" style="width:100%"><button class="panel-btn success" onclick="createTask()" ${!canCreate ? 'disabled' : ''} style="width:100%">✓ Créer la tâche</button></div>`;
+                footer.innerHTML = `<div class="panel-footer-right" style="width:100%"><button class="panel-btn success" onclick="createTask()" ${!canCreate ? 'disabled' : ''} style="width:100%">Créer la tâche</button></div>`;
             } else {
                 footer.innerHTML = '';
             }
@@ -1377,7 +1434,93 @@
                 saveTaskToGrist();
             }
         }
-        
+
+        function setProgressPreset(value) {
+            const data = panelState.editData;
+            if (!data) return;
+            data.progression = value;
+            syncLocalTask();
+
+            const slider = document.querySelector('.progress-slider');
+            const valueSpan = document.getElementById('progressValue');
+            if (slider) slider.value = value;
+            if (valueSpan) valueSpan.textContent = value + '%';
+            document.querySelectorAll('.progress-preset').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.textContent) === value);
+            });
+            if (!panelState.isNew && gristReady) saveTaskToGrist();
+            render();
+        }
+
+        function setTodayDate() {
+            const data = panelState.editData;
+            if (!data) return;
+            const today = dateToGrist(new Date());
+            data.dateDebut = today;
+            if (data.type === 'jalon') data.dateEcheance = today;
+            syncLocalTask();
+            if (!panelState.isNew && gristReady) saveTaskToGrist();
+            renderPanelTask();
+            render();
+        }
+
+        // Subtasks/Checklist
+        function getSubtasks(task) {
+            if (!task?.subtasks) return [];
+            try { return JSON.parse(task.subtasks); } catch (e) { return []; }
+        }
+        function subtasksToJson(subtasks) {
+            return JSON.stringify(subtasks || []);
+        }
+        function addSubtask() {
+            const input = document.getElementById('newSubtaskInput');
+            const text = input?.value?.trim();
+            if (!text) return;
+            const data = panelState.editData;
+            if (!data.subtasks) data.subtasks = [];
+            data.subtasks.push({ id: Date.now(), text: text, done: false });
+            input.value = '';
+            updateSubtaskProgress();
+            if (!panelState.isNew && gristReady) saveTaskToGrist();
+            renderPanelTask();
+            render();
+        }
+        function toggleSubtask(id) {
+            const data = panelState.editData;
+            if (!data.subtasks) return;
+            const st = data.subtasks.find(s => s.id === id);
+            if (st) {
+                st.done = !st.done;
+                updateSubtaskProgress();
+                if (!panelState.isNew && gristReady) saveTaskToGrist();
+                renderPanelTask();
+                render();
+            }
+        }
+        function removeSubtask(id) {
+            const data = panelState.editData;
+            if (!data.subtasks) return;
+            const idx = data.subtasks.findIndex(s => s.id === id);
+            if (idx !== -1) {
+                data.subtasks.splice(idx, 1);
+                updateSubtaskProgress();
+                if (!panelState.isNew && gristReady) saveTaskToGrist();
+                renderPanelTask();
+                render();
+            }
+        }
+        function updateSubtaskProgress() {
+            const data = panelState.editData;
+            if (!data.subtasks || data.subtasks.length === 0) return;
+            const done = data.subtasks.filter(s => s.done).length;
+            const total = data.subtasks.length;
+            data.progression = Math.round((done / total) * 100);
+            syncLocalTask();
+        }
+        function handleSubtaskKeydown(e) {
+            if (e.key === 'Enter') { e.preventDefault(); addSubtask(); }
+        }
+
         function toggleMultiSelect(id) {
             const el = document.getElementById(id);
             document.querySelectorAll('.multi-select').forEach(s => { if (s.id !== id) s.classList.remove('open'); });
@@ -1483,9 +1626,10 @@
                 dependDe: toGristRefList(data.dependDe),
                 tags: toGristChoiceList(data.tags),
                 estimationH: data.estimationH,
-                tempsPasse: data.tempsPasse
+                tempsPasse: data.tempsPasse,
+                subtasks: subtasksToJson(data.subtasks)
             };
-            
+
             try {
                 await grist.docApi.applyUserActions([['UpdateRecord', 'Tasks', panelState.taskId, record]]);
                 showSaveIndicator();
@@ -1515,9 +1659,10 @@
                 dependDe: toGristRefList(data.dependDe),
                 tags: toGristChoiceList(data.tags),
                 estimationH: data.estimationH,
-                tempsPasse: data.tempsPasse
+                tempsPasse: data.tempsPasse,
+                subtasks: subtasksToJson(data.subtasks)
             };
-            
+
             if (gristReady) {
                 try {
                     await grist.docApi.applyUserActions([['AddRecord', 'Tasks', null, record]]);
@@ -1561,7 +1706,7 @@
         // ═══════════════════════════════════════════════════════════════════════
         async function initGrist() {
             try {
-                grist.ready({ requiredAccess: 'full' });
+                await grist.ready({ requiredAccess: 'full' });
                 await ensureSchema();
                 await loadAllData();
                 grist.onRecords(async () => await loadAllData());
@@ -1590,7 +1735,7 @@
         
         function useDemoMode() {
             document.body.insertAdjacentHTML('beforeend', '<div class="demo-badge">Démo</div>');
-            
+
             team = [
                 { id: 1, nom: 'Alice Martin', actif: true, couleur: '#4f46e5' },
                 { id: 2, nom: 'Bob Durant', actif: true, couleur: '#10b981' },
@@ -1599,22 +1744,25 @@
             projects = [
                 { id: 1, nom: 'Refonte Portail', couleur: '#4f46e5', actif: true },
                 { id: 2, nom: 'App Mobile', couleur: '#10b981', actif: true },
-                { id: 3, nom: 'Dashboard IA', couleur: '#f59e0b', actif: true }
+                { id: 3, nom: 'API v2', couleur: '#f59e0b', actif: true }
             ];
-            
+
             const today = new Date();
             const day = (d) => dateToGrist(new Date(today.getFullYear(), today.getMonth(), today.getDate() + d));
-            
+
             tasks = [
                 { id: 1, titre: 'Analyse besoins', priorite: '1', projet: 1, dateDebut: day(-10), dateEcheance: day(-5), progression: 100, statut: 'done', type: 'tache', assignees: ['L', 1], tags: ['L', 'documentation'] },
-                { id: 2, titre: 'Dev Backend', priorite: '1', projet: 1, dateDebut: day(-4), dateEcheance: day(10), progression: 40, statut: 'inprogress', type: 'tache', dependDe: ['L', 1], assignees: ['L', 1, 2], estimationH: 32, tempsPasse: 12 },
-                { id: 3, titre: 'Design UI', priorite: '2', projet: 2, dateDebut: day(-5), dateEcheance: day(2), progression: 80, statut: 'review', type: 'tache', assignees: ['L', 3] },
-                { id: 4, titre: 'Livraison MVP', priorite: '1', projet: 1, dateDebut: day(15), dateEcheance: day(15), progression: 0, statut: 'todo', type: 'jalon', dependDe: ['L', 2] },
-                { id: 5, titre: 'Tests QA', priorite: '3', projet: 3, dateDebut: day(5), dateEcheance: day(12), progression: 0, statut: 'todo', type: 'tache', tags: ['L', 'qa', 'tests'] },
-                { id: 6, titre: 'Documentation', priorite: '4', projet: null, dateDebut: day(12), dateEcheance: day(20), progression: 0, statut: 'todo', type: 'tache', assignees: ['L', 3] },
-                { id: 7, titre: 'Formation équipe', priorite: '3', projet: 2, dateDebut: day(18), dateEcheance: day(22), progression: 0, statut: 'todo', type: 'reunion' }
+                { id: 2, titre: 'Dev Backend', priorite: '1', projet: 1, dateDebut: day(-4), dateEcheance: day(2), progression: 60, statut: 'inprogress', type: 'tache', dependDe: ['L', 1], assignees: ['L', 1, 2], estimationH: 32, tempsPasse: 12 },
+                { id: 3, titre: 'Design UI', priorite: '2', projet: 2, dateDebut: day(-5), dateEcheance: day(1), progression: 80, statut: 'review', type: 'tache', assignees: ['L', 3] },
+                { id: 4, titre: 'Livraison MVP', priorite: '1', projet: 1, dateDebut: day(15), dateEcheance: day(15), progression: 0, statut: 'todo', type: 'jalon', dependDe: ['L', 2], assignees: ['L', 1] },
+                { id: 5, titre: 'Tests QA', priorite: '3', projet: 2, dateDebut: day(5), dateEcheance: day(12), progression: 0, statut: 'todo', type: 'tache', assignees: ['L', 2], tags: ['L', 'qa', 'tests'] },
+                { id: 6, titre: 'Documentation', priorite: '4', projet: 3, dateDebut: day(-2), dateEcheance: day(-1), progression: 20, statut: 'inprogress', type: 'tache', assignees: ['L', 3] },
+                { id: 7, titre: 'Correction bugs', priorite: '2', projet: 1, dateDebut: day(0), dateEcheance: day(3), progression: 10, statut: 'inprogress', type: 'tache', assignees: ['L', 2] },
+                { id: 8, titre: 'Réunion client', priorite: '2', projet: 2, dateDebut: day(7), dateEcheance: day(7), progression: 0, statut: 'todo', type: 'reunion', assignees: ['L', 1, 3] },
+                { id: 9, titre: 'Migration DB', priorite: '1', projet: 3, dateDebut: day(-3), dateEcheance: day(0), progression: 90, statut: 'review', type: 'tache', assignees: ['L', 1] },
+                { id: 10, titre: 'Formation équipe', priorite: '3', projet: 1, dateDebut: day(10), dateEcheance: day(14), progression: 0, statut: 'todo', type: 'reunion', assignees: ['L', 2, 3] }
             ];
-            
+
             updateFilterMenus();
             render();
         }
@@ -1647,6 +1795,13 @@
         });
 
         // Start
+        // Initialiser la vue depuis localStorage
+        document.querySelectorAll('.view-controls .btn').forEach(b => b.classList.toggle('active', b.id === 'btn' + currentView.charAt(0).toUpperCase() + currentView.slice(1)));
+        Object.keys(VIEW_CONFIG).forEach(key => {
+            const cfg = VIEW_CONFIG[key];
+            const el = document.getElementById(cfg.gridId);
+            if (el) el.style.display = key === currentView ? cfg.display : 'none';
+        });
         initGrist();
     </script>
 </body>
