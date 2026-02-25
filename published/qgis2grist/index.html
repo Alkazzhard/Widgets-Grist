@@ -137,9 +137,10 @@ body {
   font-family: var(--font-mono); font-size: 11px; font-weight: 600;
   padding: 4px 10px; border-radius: 6px; letter-spacing: 0.06em;
 }
-.fmt-badge.q2w { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.3); }
-.fmt-badge.qgz { background: rgba(62,93,231,0.08); color: var(--primary); border: 1px solid rgba(62,93,231,0.2); }
-.fmt-badge.qfd { background: rgba(227,179,65,0.15); color: var(--yellow); border: 1px solid rgba(227,179,65,0.3); }
+.fmt-badge.q2w  { background: rgba(63,185,80,0.15);  color: var(--green);   border: 1px solid rgba(63,185,80,0.3); }
+.fmt-badge.qgz  { background: rgba(62,93,231,0.08);  color: var(--primary); border: 1px solid rgba(62,93,231,0.2); }
+.fmt-badge.qfd  { background: rgba(227,179,65,0.15); color: var(--yellow);  border: 1px solid rgba(227,179,65,0.3); }
+.fmt-badge.gpkg { background: rgba(139,92,246,0.12); color: #8b5cf6;        border: 1px solid rgba(139,92,246,0.3); }
 
 .drop-btn {
   display: inline-flex; align-items: center; gap: 8px;
@@ -443,14 +444,14 @@ body {
         <div class="drop-formats">
           <span class="fmt-badge q2w">qgis2web .zip</span>
           <span class="fmt-badge q2w">qgis2web .html</span>
-          <span class="fmt-badge qgz">.qgz normal</span>
           <span class="fmt-badge qfd">.qgz QField</span>
+          <span class="fmt-badge gpkg">.gpkg</span>
         </div>
         <label class="drop-btn" for="file-input">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           Choisir un fichier
         </label>
-        <input type="file" id="file-input" class="file-input" accept=".zip,.html,.htm,.qgz">
+        <input type="file" id="file-input" class="file-input" accept=".zip,.html,.htm,.qgz,.gpkg">
       </div>
     </div>
 
@@ -612,8 +613,12 @@ async function handleFile(file) {
       setReadingLabel('Lecture du projet QGIS…', 'décompression QGZ');
       const ab = await file.arrayBuffer();
       layers = await parseQgzFile(ab, null, file.name);
+    } else if (ext === 'gpkg') {
+      setReadingLabel('Lecture GeoPackage…', 'ouverture SQLite');
+      const ab = await file.arrayBuffer();
+      layers = await parseGpkgFile(ab);
     } else {
-      throw new Error(`Format non reconnu: .${ext}. Formats supportés: .zip, .html, .qgz`);
+      throw new Error(`Format non reconnu: .${ext}. Formats supportés: .zip, .html, .qgz, .gpkg`);
     }
 
     if (!layers || layers.length === 0) {
@@ -643,12 +648,14 @@ async function parseZipFile(arrayBuffer, zipName) {
   const names = Object.keys(zip.files);
 
   // Detection heuristics
-  const hasQgs = names.some(n => n.endsWith('.qgs') || n.endsWith('.qgz'));
+  const hasQgs      = names.some(n => n.endsWith('.qgs') || n.endsWith('.qgz'));
   const hasIndexHtml = names.some(n => n.endsWith('index.html'));
-  const hasLayersJs = names.some(n => n.includes('layers') && n.endsWith('.js'));
+  const hasLayersJs  = names.some(n => n.includes('layers') && n.endsWith('.js'));
   const hasLayersDir = names.some(n => n.includes('/layers/') || n.startsWith('layers/'));
+  // qgis2web exporte aussi les données dans data/*.js
+  const hasDataDir   = names.some(n => /(?:^|\/)data\/[^/]+\.js$/i.test(n));
 
-  if (hasIndexHtml || hasLayersJs || hasLayersDir) {
+  if (hasIndexHtml || hasLayersJs || hasLayersDir || hasDataDir) {
     // qgis2web ZIP
     setReadingLabel('Format qgis2web détecté…', 'extraction des couches Leaflet');
     return parseQgis2webZip(zip);
@@ -727,6 +734,18 @@ async function parseQgis2webHtml(html) {
     searchFrom = openBrace + endIdx + 1;
   }
 
+  // Détecte un export qgis2web multi-fichiers (données dans data/*.js ou layers/*.js externes)
+  if (layers.length === 0) {
+    const extRefs = [...html.matchAll(/<script[^>]+src=["']([^"']*(?:data|layers)\/[^"']+\.js)["']/gi)].map(m => m[1]);
+    if (extRefs.length > 0) {
+      const examples = extRefs.slice(0, 2).map(r => r.split('/').pop()).join(', ');
+      throw new Error(
+        `Export qgis2web multi-fichiers : les données sont dans des fichiers externes (${examples}…). ` +
+        `Veuillez fournir le ZIP complet de l'export qgis2web (pas seulement l'index.html).`
+      );
+    }
+  }
+
   return layers;
 }
 
@@ -789,8 +808,12 @@ async function parseQgis2webZip(zip) {
   const names = Object.keys(zip.files);
   const layers = [];
 
-  // Look for layers JS files (layers/layers.js or layers_xyz.js)
-  const layerJsFiles = names.filter(n => /layers.*\.js$/i.test(n) || /\blayers\b.*\.js$/i.test(n));
+  // Fichiers JS de données : dossier layers/ ou data/ (deux variantes qgis2web)
+  const layerJsFiles = names.filter(n =>
+    /layers.*\.js$/i.test(n) ||
+    /\blayers\b.*\.js$/i.test(n) ||
+    /(?:^|\/)data\/[^/]+\.js$/i.test(n)
+  );
   // Also check for individual GeoJSON
   const geojsonFiles = names.filter(n => n.endsWith('.geojson'));
 
@@ -1023,62 +1046,259 @@ function qgsTypeToGrist(typeName) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// GPKG reader via sql.js (optional, graceful degradation)
+// WKB PARSER — pur JS, couvre WKB standard / EWKB / ISO Z·M·ZM
 // ══════════════════════════════════════════════════════════════
-let sqlJsDb = null;
+class WkbReader {
+  constructor(view, pos = 0) { this.v = view; this.p = pos; }
+  u8()  { return this.v.getUint8(this.p++); }
+  u32() { const v = this.v.getUint32(this.p, this.le); this.p += 4; return v; }
+  f64() { const v = this.v.getFloat64(this.p, this.le); this.p += 8; return v; }
+  coord(z, m) {
+    const x = this.f64(), y = this.f64();
+    if (z) this.f64(); if (m) this.f64();
+    return [x, y];
+  }
+  coords(n, z, m) { const a = []; for (let i = 0; i < n; i++) a.push(this.coord(z, m)); return a; }
+  ring(z, m)      { return this.coords(this.u32(), z, m); }
+  geom() {
+    this.le = this.u8() === 1;
+    let t = this.u32();
+    // EWKB high-bit flags (PostGIS)
+    const ez = !!(t & 0x80000000), em = !!(t & 0x40000000), es = !!(t & 0x20000000);
+    t &= 0x1FFFFFFF;
+    // ISO SQL/MM Z·M·ZM variants
+    let z = ez, m = em;
+    if      (t > 3000) { z = m = true; t -= 3000; }
+    else if (t > 2000) { m = true;     t -= 2000; }
+    else if (t > 1000) { z = true;     t -= 1000; }
+    if (es) this.p += 4; // skip embedded SRID
+    switch (t) {
+      case 1: return { type: 'Point',       coordinates: this.coord(z, m) };
+      case 2: return { type: 'LineString',  coordinates: this.coords(this.u32(), z, m) };
+      case 3: { const n=this.u32(), r=[]; for(let i=0;i<n;i++) r.push(this.ring(z,m));
+                return { type: 'Polygon', coordinates: r }; }
+      case 4: { const n=this.u32(), a=[]; for(let i=0;i<n;i++) a.push(this.geom().coordinates);
+                return { type: 'MultiPoint', coordinates: a }; }
+      case 5: { const n=this.u32(), a=[]; for(let i=0;i<n;i++) a.push(this.geom().coordinates);
+                return { type: 'MultiLineString', coordinates: a }; }
+      case 6: { const n=this.u32(), a=[]; for(let i=0;i<n;i++) a.push(this.geom().coordinates);
+                return { type: 'MultiPolygon', coordinates: a }; }
+      case 7: { const n=this.u32(), a=[]; for(let i=0;i<n;i++) a.push(this.geom());
+                return { type: 'GeometryCollection', geometries: a }; }
+      default: return null;
+    }
+  }
+}
 
-async function loadSqlJs() {
-  if (sqlJsDb) return sqlJsDb;
-  return new Promise((resolve, reject) => {
-    if (typeof initSqlJs !== 'undefined') { resolve(null); return; }
+// Parse un blob GPKG (header GP + envelope optionnelle + WKB)
+function parseGpkgGeom(blob) {
+  let ab;
+  if (blob instanceof Uint8Array)  ab = blob.buffer.slice(blob.byteOffset, blob.byteOffset + blob.byteLength);
+  else if (blob instanceof ArrayBuffer) ab = blob;
+  else return null;
+  const view = new DataView(ab);
+  if (view.byteLength < 5) return null;
+  let wkbStart = 0;
+  if (view.getUint8(0) === 0x47 && view.getUint8(1) === 0x50) { // 'GP' magic
+    const flags   = view.getUint8(3);
+    if ((flags >> 5) & 1) return null; // empty geometry flag
+    const envType = (flags >> 1) & 7;
+    wkbStart = 8 + [0, 32, 48, 48, 64][Math.min(envType, 4)];
+  }
+  try { const r = new WkbReader(view, wkbStart); return r.geom(); } catch(e) { return null; }
+}
+
+// ══════════════════════════════════════════════════════════════
+// CRS REPROJECTION — EPSG:3857 natif, proj4js on-demand sinon
+// ══════════════════════════════════════════════════════════════
+let _proj4 = null;
+
+async function loadProj4() {
+  if (_proj4) return _proj4;
+  if (typeof proj4 !== 'undefined') { _proj4 = proj4; return proj4; }
+  return new Promise(resolve => {
     const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.12.0/sql-wasm.js';
-    s.onload = resolve;
-    s.onerror = reject;
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js';
+    s.onload  = () => { _proj4 = proj4; resolve(proj4); };
+    s.onerror = () => resolve(null); // dégradation gracieuse
     document.head.appendChild(s);
   });
 }
 
+function reprojectGeom(geom, proj4fn, from, to) {
+  if (!geom || from === to || from === 'EPSG:4326') return geom;
+  function reproj(c) {
+    if (from === 'EPSG:3857') { // Web Mercator → WGS84 (pas besoin de proj4)
+      const R = 6378137;
+      return [c[0]/R*(180/Math.PI), (2*Math.atan(Math.exp(c[1]/R))-Math.PI/2)*(180/Math.PI)];
+    }
+    return proj4fn ? proj4fn(from, to, [c[0], c[1]]) : c;
+  }
+  function walk(c) {
+    if (!Array.isArray(c)) return c;
+    return typeof c[0] === 'number' ? reproj(c) : c.map(walk);
+  }
+  if (geom.type === 'GeometryCollection')
+    return { ...geom, geometries: geom.geometries.map(g => reprojectGeom(g, proj4fn, from, to)) };
+  return { ...geom, coordinates: walk(geom.coordinates) };
+}
+
+// ══════════════════════════════════════════════════════════════
+// SQL.JS LOADER
+// ══════════════════════════════════════════════════════════════
+async function loadSqlJs() {
+  return new Promise((resolve, reject) => {
+    if (typeof initSqlJs !== 'undefined') { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.12.0/sql-wasm.js';
+    s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+// Helper : ouvre une DB sql.js depuis un ArrayBuffer
+async function openSqlJs(arrayBuffer) {
+  await loadSqlJs();
+  if (typeof initSqlJs === 'undefined') throw new Error('sql.js non disponible');
+  const SQL = await initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.12.0/${f}` });
+  return new SQL.Database(new Uint8Array(arrayBuffer));
+}
+
+// Helper : construit la carte CRS + charge proj4js si nécessaire
+async function buildCrsContext(db) {
+  const crsMap = {};
+  try {
+    const res = db.exec(`SELECT srs_id, organization, organization_coordsys_id, definition FROM gpkg_spatial_ref_sys`);
+    if (res.length) for (const [id, org, epsg, wkt] of res[0].values)
+      crsMap[id] = { epsg: epsg || id, org: org || '', wkt: wkt || '' };
+  } catch(e) {}
+
+  // Détecte si proj4js est nécessaire (CRS ≠ 4326 et ≠ 3857)
+  const srsRes = db.exec(`SELECT DISTINCT srs_id FROM gpkg_geometry_columns`);
+  const srsIds = srsRes.length ? srsRes[0].values.map(r => r[0]) : [];
+  const needProj4 = srsIds.some(id => {
+    const epsg = crsMap[id]?.epsg ?? id;
+    return epsg !== 4326 && epsg !== 0 && id !== 4326 && epsg !== 3857 && id !== 3857;
+  });
+
+  let proj4fn = null;
+  if (needProj4) {
+    setReadingLabel('Chargement proj4js…', 'reprojection requise');
+    proj4fn = await loadProj4();
+    if (proj4fn) {
+      for (const [id, crs] of Object.entries(crsMap))
+        if (crs.wkt && crs.epsg !== 4326 && crs.epsg !== 3857)
+          try { proj4fn.defs('EPSG:' + crs.epsg, crs.wkt); } catch(e) {}
+    }
+  }
+  return { crsMap, proj4fn };
+}
+
+// ══════════════════════════════════════════════════════════════
+// PARSER: GPKG standalone (.gpkg) — complet avec WKB + reprojection
+// ══════════════════════════════════════════════════════════════
+async function parseGpkgFile(arrayBuffer) {
+  setReadingLabel('Lecture GeoPackage…', 'chargement sql.js');
+  const db = await openSqlJs(arrayBuffer);
+  try {
+    // 1. Tables de features
+    const contRes = db.exec(`
+      SELECT gc.table_name, gc.column_name, gc.srs_id
+      FROM gpkg_geometry_columns gc
+      JOIN gpkg_contents c ON gc.table_name = c.table_name
+      WHERE c.data_type = 'features'`);
+    if (!contRes.length || !contRes[0].values.length)
+      throw new Error('Aucune couche vecteur trouvée dans ce GPKG.');
+
+    // 2. CRS + proj4js
+    const { crsMap, proj4fn } = await buildCrsContext(db);
+
+    // 3. Lecture couche par couche
+    const layers = [];
+    for (const [tableName, geomCol, srsId] of contRes[0].values) {
+      setReadingLabel('Lecture GeoPackage…', tableName);
+      const epsg       = crsMap[srsId]?.epsg ?? srsId;
+      const fromCRS    = `EPSG:${epsg}`;
+      const needsReproj = epsg !== 4326 && srsId !== 4326 && epsg !== 0;
+
+      // Colonnes attributaires
+      const colsRes  = db.exec(`PRAGMA table_info("${tableName}")`);
+      if (!colsRes.length) continue;
+      const propCols = colsRes[0].values
+        .map(r => ({ name: r[1], type: r[2] }))
+        .filter(c => c.name !== geomCol && c.name.toLowerCase() !== 'fid');
+
+      // Lecture par lots (GPKG peut être volumineux)
+      const countRes = db.exec(`SELECT COUNT(*) FROM "${tableName}"`);
+      const total    = countRes?.[0]?.values?.[0]?.[0] || 0;
+      const BATCH    = 5000;
+      const features = [];
+
+      for (let off = 0; off < Math.max(total, 1); off += BATCH) {
+        const colList = [`"${geomCol}"`, ...propCols.map(c => `"${c.name}"`)].join(', ');
+        const rowsRes = db.exec(`SELECT ${colList} FROM "${tableName}" LIMIT ${BATCH} OFFSET ${off}`);
+        if (!rowsRes.length || !rowsRes[0].values.length) break;
+
+        for (const row of rowsRes[0].values) {
+          const props = {};
+          propCols.forEach((c, i) => { props[c.name] = row[i + 1]; });
+          let geometry = null;
+          if (row[0]) {
+            geometry = parseGpkgGeom(row[0]);
+            if (geometry && needsReproj)
+              geometry = reprojectGeom(geometry, proj4fn, fromCRS, 'EPSG:4326');
+          }
+          features.push({ type: 'Feature', geometry, properties: props });
+        }
+        if (total <= BATCH) break;
+      }
+      layers.push(buildLayerFromGeojson(tableName, { type: 'FeatureCollection', features }));
+    }
+    return layers;
+  } finally { db.close(); }
+}
+
+// ══════════════════════════════════════════════════════════════
+// GPKG reader embarqué (QField ZIP) — même moteur WKB + reprojection
+// ══════════════════════════════════════════════════════════════
 async function readGpkgWithSqlJs(arrayBuffer, layerHint) {
   try {
-    await loadSqlJs();
-    if (typeof initSqlJs === 'undefined') return null;
-
-    const SQL = await initSqlJs({
-      locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.12.0/${f}`
-    });
-
-    const db = new SQL.Database(new Uint8Array(arrayBuffer));
-    // List feature tables
+    const db = await openSqlJs(arrayBuffer);
     const tableRes = db.exec("SELECT table_name FROM gpkg_contents WHERE data_type='features'");
-    if (!tableRes.length || !tableRes[0].values.length) return null;
+    if (!tableRes.length || !tableRes[0].values.length) { db.close(); return null; }
+
+    const { crsMap, proj4fn } = await buildCrsContext(db);
 
     const features = [];
     for (const [tableName] of tableRes[0].values) {
-      // Get columns
-      const cols = db.exec(`PRAGMA table_info(${tableName})`);
-      const colNames = cols[0].values.map(r => r[1]);
-      const geomColRes = db.exec(`SELECT column_name FROM gpkg_geometry_columns WHERE table_name='${tableName}'`);
-      const geomCol = geomColRes.length ? geomColRes[0].values[0][0] : 'geom';
+      const gcRes  = db.exec(`SELECT column_name, srs_id FROM gpkg_geometry_columns WHERE table_name='${tableName}'`);
+      const geomCol = gcRes?.[0]?.values?.[0]?.[0] || 'geom';
+      const srsId   = gcRes?.[0]?.values?.[0]?.[1];
+      const epsg    = crsMap[srsId]?.epsg ?? srsId;
+      const needsReproj = epsg !== 4326 && srsId !== 4326 && epsg !== 0;
 
-      // Read rows (limit 5000 for perf)
-      const rows = db.exec(`SELECT * FROM ${tableName} LIMIT 5000`);
+      const cols    = db.exec(`PRAGMA table_info("${tableName}")`);
+      const colNames = cols[0].values.map(r => r[1]);
+      const geomIdx  = colNames.indexOf(geomCol);
+      const rows    = db.exec(`SELECT * FROM "${tableName}" LIMIT 10000`);
       if (!rows.length) continue;
 
       for (const row of rows[0].values) {
         const props = {};
-        colNames.forEach((c, i) => {
-          if (c !== geomCol && c !== 'fid') props[c] = row[i];
-        });
-        // Geometry is binary WKB inside GPKG envelope — skip for now
-        features.push({ type: 'Feature', geometry: null, properties: props });
+        colNames.forEach((c, i) => { if (c !== geomCol && c.toLowerCase() !== 'fid') props[c] = row[i]; });
+        let geometry = null;
+        if (geomIdx >= 0 && row[geomIdx]) {
+          geometry = parseGpkgGeom(row[geomIdx]);
+          if (geometry && needsReproj)
+            geometry = reprojectGeom(geometry, proj4fn, `EPSG:${epsg}`, 'EPSG:4326');
+        }
+        features.push({ type: 'Feature', geometry, properties: props });
       }
     }
-
     db.close();
     return features;
   } catch(e) {
-    console.warn('sql.js GPKG read error:', e);
+    console.warn('GPKG read error:', e);
     return null;
   }
 }
