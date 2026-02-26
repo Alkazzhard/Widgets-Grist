@@ -3,698 +3,1050 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - TaskFlow v15</title>
+    <title>Dashboard - TaskFlow v16</title>
     <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
     <style>
         :root {
-            /* Primary */
-            --primary: #4f46e5; --primary-dark: #4338ca; --primary-light: #e0e7ff;
-            /* Semantic */
+            --primary: #3e5de7; --primary-dark: #2845c1; --primary-light: #dce6ff;
             --success: #10b981; --success-light: #d1fae5;
             --warning: #f59e0b; --warning-light: #fef3c7;
-            --danger: #ef4444; --danger-light: #fee2e2;
-            --info: #3b82f6; --info-light: #dbeafe;
-            /* Backgrounds */
+            --danger: #ef4444;  --danger-light: #fee2e2;
+            --info: #3b82f6;    --info-light: #dbeafe;
             --bg: #f8fafc; --card-bg: #ffffff;
-            /* Text */
             --text: #1e293b; --text-muted: #64748b; --text-light: #94a3b8;
-            /* Borders */
             --border: #e2e8f0; --border-dark: #cbd5e1;
-            /* Shadows */
             --shadow: 0 1px 3px rgba(0,0,0,0.1); --shadow-lg: 0 10px 40px rgba(0,0,0,0.15);
-            /* Layout */
-            --panel-width: 340px;
+            --edit-panel-width: 288px;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-        
-        /* Layout */
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); }
+
+        /* ── Layout ── */
         .dashboard { display: flex; flex-direction: column; height: 100vh; }
-        .header { padding: 12px 20px; background: var(--card-bg); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-        .header h1 { font-size: 1.25rem; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-        .header-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-        .last-update { font-size: 0.75rem; color: var(--text-muted); }
-        .btn { padding: 8px 12px; border: 1px solid var(--border); background: var(--card-bg); border-radius: 8px; font-size: 0.8rem; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 6px; }
+        .header { padding: 9px 16px; background: var(--card-bg); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+        .header h1 { font-size: 1.05rem; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+        .header-filters { flex: 1; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; min-width: 0; }
+        .header-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+        .last-update { font-size: 0.71rem; color: var(--text-muted); white-space: nowrap; }
+
+        /* ── Boutons ── */
+        .btn { padding: 6px 10px; border: 1px solid var(--border); background: var(--card-bg); border-radius: 6px; font-size: 0.77rem; cursor: pointer; transition: all 0.15s; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
         .btn:hover { background: var(--bg); }
         .btn.primary { background: var(--primary); color: white; border-color: var(--primary); }
         .btn.primary:hover { background: var(--primary-dark); }
+        .btn.active { background: var(--primary-light); color: var(--primary); border-color: var(--primary); }
 
-        /* Export Dropdown */
-        .filter-dropdown { position: relative; }
-        .filter-menu { position: absolute; top: 100%; right: 0; margin-top: 4px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-lg); min-width: 160px; padding: 6px; z-index: 200; display: none; }
-        .filter-menu.open { display: block; }
-        .filter-option { padding: 6px 8px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 0.8rem; }
-        .filter-option:hover { background: var(--bg); }
-        
-        .main { flex: 1; overflow: auto; padding: 16px; }
-        
-        /* Grid */
-        .grid { display: grid; gap: 16px; grid-template-columns: repeat(4, 1fr); grid-template-rows: auto auto 1fr; }
-        @media (max-width: 1200px) { .grid { grid-template-columns: repeat(2, 1fr); } }
-        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
-        
-        /* Cards */
-        .card { background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border); padding: 16px; }
-        .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-        .card-title { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
-        .card-icon { font-size: 1.2rem; }
-        
-        /* KPI Cards */
-        .kpi-card { display: flex; flex-direction: column; }
-        .kpi-value { font-size: 2rem; font-weight: 700; line-height: 1.2; }
-        .kpi-label { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
-        .kpi-trend { font-size: 0.75rem; margin-top: 8px; padding: 4px 8px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; width: fit-content; }
-        .kpi-trend.up { background: var(--success-light); color: var(--success); }
-        .kpi-trend.down { background: var(--danger-light); color: var(--danger); }
-        .kpi-trend.neutral { background: var(--bg); color: var(--text-muted); }
-        
-        .kpi-card.total .kpi-value { color: var(--primary); }
-        .kpi-card.progress .kpi-value { color: var(--info); }
-        .kpi-card.done .kpi-value { color: var(--success); }
-        .kpi-card.late .kpi-value { color: var(--danger); }
-        
-        /* Charts */
-        .chart-card { grid-column: span 2; }
-        .chart-container { height: 200px; display: flex; align-items: center; justify-content: center; }
-        
-        /* Donut Chart */
-        .donut-chart { position: relative; width: 160px; height: 160px; }
+        /* ── Filter chips ── */
+        .filter-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; background: var(--primary-light); color: var(--primary); border-radius: 10px; font-size: 0.71rem; font-weight: 500; }
+        .filter-chip button { background: none; border: none; color: var(--primary); cursor: pointer; font-size: 0.78rem; padding: 0; line-height: 1; }
+
+        /* ── Filter panel ── */
+        .filter-panel { background: var(--card-bg); border-bottom: 1px solid var(--border); padding: 10px 16px; display: none; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+        .filter-panel.open { display: flex; }
+        .filter-section { display: flex; flex-direction: column; gap: 5px; }
+        .filter-section-label { font-size: 0.69rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+        .filter-btns { display: flex; gap: 4px; flex-wrap: wrap; }
+        .filter-btn { padding: 3px 9px; border: 1px solid var(--border); background: white; border-radius: 5px; font-size: 0.74rem; cursor: pointer; transition: all 0.1s; }
+        .filter-btn:hover { background: var(--bg); }
+        .filter-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .filter-checkboxes { display: flex; gap: 5px; flex-wrap: wrap; }
+        .filter-check { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 5px; font-size: 0.74rem; cursor: pointer; background: white; transition: all 0.1s; }
+        .filter-check.active { background: var(--primary-light); color: var(--primary); border-color: var(--primary); }
+        .filter-clear { padding: 3px 8px; border: none; background: none; font-size: 0.74rem; color: var(--danger); cursor: pointer; text-decoration: underline; }
+
+        /* ── Main ── */
+        .main { flex: 1; overflow: auto; padding: 14px; transition: margin-right 0.25s ease; }
+        .main.panel-open { margin-right: var(--edit-panel-width); }
+
+        /* ── Dashboard Grid ── */
+        .dashboard-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: start; }
+        @media (max-width: 1200px) { .dashboard-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 768px)  { .dashboard-grid { grid-template-columns: 1fr; } }
+
+        /* ── Component ── */
+        .component { background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border); overflow: hidden; }
+        .component[data-span="1"] { grid-column: span 1; }
+        .component[data-span="2"] { grid-column: span 2; }
+        .component[data-span="3"] { grid-column: span 3; }
+        .component[data-span="4"] { grid-column: span 4; }
+
+        /* edit mode */
+        .dashboard-grid.edit-mode .component { border: 2px dashed var(--border-dark); cursor: pointer; }
+        .dashboard-grid.edit-mode .component:hover { border-color: var(--primary); }
+        .dashboard-grid.edit-mode .component.selected { border: 2px solid var(--primary); background: #f5f7ff; }
+
+        /* ── Component header ── */
+        .comp-header { display: flex; align-items: center; justify-content: space-between; padding: 11px 13px 7px; border-bottom: 1px solid var(--border); min-height: 38px; }
+        .comp-title-wrap { display: flex; align-items: center; gap: 5px; min-width: 0; }
+        .comp-title { font-size: 0.81rem; font-weight: 600; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .comp-filter-badge { font-size: 0.63rem; background: var(--info-light); color: var(--info); padding: 1px 5px; border-radius: 8px; white-space: nowrap; }
+
+        /* ── Edit controls (on component in edit mode) ── */
+        .edit-controls { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+        .span-btns { display: flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+        .span-btn { width: 20px; height: 20px; border: none; border-right: 1px solid var(--border); background: white; font-size: 0.64rem; cursor: pointer; }
+        .span-btn:last-child { border-right: none; }
+        .span-btn.active { background: var(--primary); color: white; }
+        .btn-icon { width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 4px; background: white; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 0.78rem; transition: all 0.1s; }
+        .btn-icon:hover { background: var(--bg); }
+        .btn-icon.active { background: var(--primary-light); color: var(--primary); border-color: var(--primary); }
+        .btn-icon.danger { border-color: #fca5a5; color: var(--danger); }
+        .btn-icon.danger:hover { background: var(--danger-light); }
+
+        /* ── Component body ── */
+        .comp-body { padding: 13px; }
+
+        /* ── KPI ── */
+        .kpi-value { font-size: 2rem; font-weight: 700; line-height: 1.1; }
+        .kpi-label { font-size: 0.77rem; color: var(--text-muted); margin-top: 4px; }
+        .kpi-total     .kpi-value { color: var(--primary); }
+        .kpi-inprogress .kpi-value { color: var(--info); }
+        .kpi-done      .kpi-value, .kpi-done_week .kpi-value, .kpi-rate .kpi-value { color: var(--success); }
+        .kpi-late      .kpi-value { color: var(--danger); }
+        .kpi-late-border { border-color: var(--danger) !important; background: var(--danger-light) !important; }
+
+        /* ── Donut ── */
+        .donut-wrap { display: flex; align-items: center; justify-content: center; gap: 18px; }
+        .donut-chart { position: relative; width: 130px; height: 130px; flex-shrink: 0; }
         .donut-chart svg { transform: rotate(-90deg); }
-        .donut-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
-        .donut-center-value { font-size: 1.5rem; font-weight: 700; }
-        .donut-center-label { font-size: 0.7rem; color: var(--text-muted); }
-        .donut-legend { display: flex; flex-direction: column; gap: 8px; margin-left: 24px; }
-        .legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; }
-        .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
-        .legend-value { margin-left: auto; font-weight: 600; }
-        
-        /* Bar Chart */
-        .bar-chart { width: 100%; display: flex; flex-direction: column; gap: 12px; }
-        .bar-row { display: flex; align-items: center; gap: 12px; }
-        .bar-label { width: 80px; font-size: 0.8rem; text-align: right; }
-        .bar-track { flex: 1; height: 24px; background: var(--bg); border-radius: 6px; overflow: hidden; position: relative; }
-        .bar-fill { height: 100%; border-radius: 6px; transition: width 0.5s ease; display: flex; align-items: center; justify-content: flex-end; padding-right: 8px; }
-        .bar-fill span { font-size: 0.7rem; font-weight: 600; color: white; }
-        .bar-fill.p1 { background: #ef4444; }
-        .bar-fill.p2 { background: #f59e0b; }
-        .bar-fill.p3 { background: #3b82f6; }
-        .bar-fill.p4 { background: #64748b; }
-        
-        /* Team Workload */
-        .workload-card { grid-column: span 2; }
-        .workload-list { display: flex; flex-direction: column; gap: 10px; max-height: 200px; overflow-y: auto; }
-        .workload-item { display: flex; align-items: center; gap: 12px; }
-        .workload-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--primary-light); color: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.8rem; }
-        .workload-info { flex: 1; }
-        .workload-name { font-size: 0.85rem; font-weight: 500; }
-        .workload-tasks { font-size: 0.75rem; color: var(--text-muted); }
-        .workload-bar { width: 120px; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
-        .workload-bar-fill { height: 100%; background: var(--primary); border-radius: 4px; }
+        .donut-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center; }
+        .donut-center-value { font-size: 1.3rem; font-weight: 700; }
+        .donut-center-label { font-size: 0.65rem; color: var(--text-muted); }
+        .donut-legend { display: flex; flex-direction: column; gap: 6px; }
+        .legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.77rem; }
+        .legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .legend-value { margin-left: auto; font-weight: 600; padding-left: 8px; }
+
+        /* ── Bars ── */
+        .bar-chart { display: flex; flex-direction: column; gap: 9px; }
+        .bar-row { display: flex; align-items: center; gap: 9px; }
+        .bar-label { width: 66px; font-size: 0.76rem; text-align: right; color: var(--text-muted); flex-shrink: 0; }
+        .bar-track { flex: 1; height: 20px; background: var(--bg); border-radius: 5px; overflow: hidden; }
+        .bar-fill { height: 100%; border-radius: 5px; display: flex; align-items: center; justify-content: flex-end; padding-right: 6px; transition: width 0.4s ease; }
+        .bar-fill span { font-size: 0.67rem; font-weight: 600; color: white; }
+
+        /* ── Workload ── */
+        .workload-list { display: flex; flex-direction: column; gap: 9px; }
+        .workload-item { display: flex; align-items: center; gap: 9px; }
+        .workload-avatar { width: 28px; height: 28px; border-radius: 50%; color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.73rem; flex-shrink: 0; }
+        .workload-info { flex: 1; min-width: 0; }
+        .workload-name { font-size: 0.8rem; font-weight: 500; }
+        .workload-tasks { font-size: 0.69rem; color: var(--text-muted); }
+        .workload-bar { width: 90px; height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; flex-shrink: 0; }
+        .workload-bar-fill { height: 100%; border-radius: 3px; background: var(--primary); }
         .workload-bar-fill.high { background: var(--danger); }
         .workload-bar-fill.medium { background: var(--warning); }
-        
-        /* Upcoming */
-        .upcoming-card { grid-column: span 2; }
-        .upcoming-list { display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto; }
-        .upcoming-item { display: flex; align-items: center; gap: 12px; padding: 10px; background: var(--bg); border-radius: 8px; cursor: pointer; transition: all 0.15s; }
-        .upcoming-item:hover { background: var(--primary-light); }
-        .upcoming-date { min-width: 50px; text-align: center; padding: 6px 8px; border-radius: 6px; background: var(--card-bg); border: 1px solid var(--border); }
-        .upcoming-date-day { font-size: 1.1rem; font-weight: 700; }
-        .upcoming-date-month { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; }
-        .upcoming-date.late { background: var(--danger-light); border-color: var(--danger); }
-        .upcoming-date.late .upcoming-date-day { color: var(--danger); }
-        .upcoming-date.today { background: var(--primary-light); border-color: var(--primary); }
-        .upcoming-date.today .upcoming-date-day { color: var(--primary); }
-        .upcoming-info { flex: 1; min-width: 0; }
-        .upcoming-title { font-size: 0.85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .upcoming-meta { font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 12px; }
-        .upcoming-priority { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; align-self: center; }
-        .upcoming-priority.p1 { background: #ef4444; }
-        .upcoming-priority.p2 { background: #f59e0b; }
-        .upcoming-priority.p3 { background: #3b82f6; }
-        .upcoming-priority.p4 { background: #64748b; }
-        
-        /* Projects */
-        .projects-card { grid-column: span 2; }
-        .projects-list { display: flex; flex-direction: column; gap: 12px; max-height: 200px; overflow-y: auto; }
-        .project-item { display: flex; align-items: center; gap: 12px; }
-        .project-color { width: 4px; height: 40px; border-radius: 2px; }
-        .project-info { flex: 1; }
-        .project-name { font-size: 0.85rem; font-weight: 500; }
-        .project-stats { font-size: 0.75rem; color: var(--text-muted); }
-        .project-progress { width: 100px; }
-        .project-progress-bar { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; }
-        .project-progress-fill { height: 100%; background: var(--success); border-radius: 3px; }
-        .project-progress-text { font-size: 0.7rem; color: var(--text-muted); text-align: right; margin-top: 2px; }
-        
-        /* Demo badge */
-        .demo-badge { position: fixed; bottom: 10px; right: 10px; background: var(--warning); color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; z-index: 100; }
-        
-        /* Empty state */
-        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; color: var(--text-muted); text-align: center; }
-        .empty-state-icon { font-size: 2rem; margin-bottom: 12px; }
-        .empty-state-text { font-size: 0.9rem; }
-        
-        /* Responsive pour header unifié */
-        @media (max-width: 768px) {
-            .header { flex-wrap: wrap; }
-            .header-right { width: 100%; justify-content: flex-end; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
-        }
 
-        /* DASH-02: Export Print/PDF */
+        /* ── Upcoming ── */
+        .upcoming-list { display: flex; flex-direction: column; gap: 6px; }
+        .upcoming-item { display: flex; align-items: center; gap: 9px; padding: 7px 9px; background: var(--bg); border-radius: 7px; cursor: pointer; transition: background 0.1s; }
+        .upcoming-item:hover { background: var(--primary-light); }
+        .upcoming-date { min-width: 42px; text-align: center; padding: 4px 5px; border-radius: 6px; background: var(--card-bg); border: 1px solid var(--border); }
+        .upcoming-date-day { font-size: 0.95rem; font-weight: 700; line-height: 1; }
+        .upcoming-date-month { font-size: 0.58rem; color: var(--text-muted); text-transform: uppercase; }
+        .upcoming-date.late   { background: var(--danger-light); border-color: var(--danger); }
+        .upcoming-date.late   .upcoming-date-day { color: var(--danger); }
+        .upcoming-date.today  { background: var(--primary-light); border-color: var(--primary); }
+        .upcoming-date.today  .upcoming-date-day { color: var(--primary); }
+        .upcoming-info { flex: 1; min-width: 0; }
+        .upcoming-title { font-size: 0.8rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .upcoming-meta { font-size: 0.69rem; color: var(--text-muted); display: flex; gap: 8px; margin-top: 1px; }
+        .upcoming-prio { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; align-self: center; }
+        .upcoming-prio.p1 { background:#ef4444; } .upcoming-prio.p2 { background:#f59e0b; }
+        .upcoming-prio.p3 { background:#3b82f6; } .upcoming-prio.p4 { background:#64748b; }
+
+        /* ── Projects ── */
+        .projects-list { display: flex; flex-direction: column; gap: 10px; }
+        .project-item { display: flex; align-items: center; gap: 9px; }
+        .project-color { width: 3px; height: 36px; border-radius: 2px; flex-shrink: 0; }
+        .project-info { flex: 1; min-width: 0; }
+        .project-name { font-size: 0.8rem; font-weight: 500; }
+        .project-stats { font-size: 0.69rem; color: var(--text-muted); }
+        .project-progress { width: 85px; flex-shrink: 0; }
+        .project-progress-bar { height: 5px; background: var(--bg); border-radius: 3px; overflow: hidden; }
+        .project-progress-fill { height: 100%; background: var(--success); border-radius: 3px; }
+        .project-progress-text { font-size: 0.67rem; color: var(--text-muted); text-align: right; margin-top: 1px; }
+
+        /* ── List ── */
+        .list-items { display: flex; flex-direction: column; gap: 3px; }
+        .list-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; transition: background 0.1s; }
+        .list-item:hover { background: var(--bg); }
+        .list-prio { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+        .list-prio.p1 { background:#ef4444; } .list-prio.p2 { background:#f59e0b; }
+        .list-prio.p3 { background:#3b82f6; } .list-prio.p4 { background:#64748b; }
+        .list-info { flex: 1; min-width: 0; }
+        .list-title { font-size: 0.79rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .list-meta { font-size: 0.69rem; color: var(--text-muted); display: flex; gap: 6px; align-items: center; margin-top: 1px; }
+        .text-danger { color: var(--danger) !important; }
+        .status-badge { padding: 1px 5px; border-radius: 4px; font-size: 0.66rem; font-weight: 500; }
+        .s-todo { background:#f1f5f9; color:var(--text-muted); }
+        .s-inprogress { background:var(--info-light); color:var(--info); }
+        .s-review { background:var(--warning-light); color:var(--warning); }
+        .s-done { background:var(--success-light); color:var(--success); }
+
+        /* ── Velocity SVG chart ── */
+        .velocity-wrap { overflow-x: auto; }
+
+        /* ── Edit Panel ── */
+        .edit-panel { position: fixed; right: 0; top: 0; bottom: 0; width: var(--edit-panel-width); background: var(--card-bg); border-left: 1px solid var(--border); box-shadow: var(--shadow-lg); z-index: 150; transform: translateX(100%); transition: transform 0.25s ease; display: flex; flex-direction: column; overflow: hidden; }
+        .edit-panel.open { transform: translateX(0); }
+        .edit-panel-hdr { padding: 12px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+        .edit-panel-title { font-size: 0.88rem; font-weight: 700; }
+        .edit-panel-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 16px; }
+
+        /* ── Edit sections ── */
+        .edit-section { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+        .edit-section-hdr { padding: 8px 11px; background: var(--bg); font-size: 0.79rem; font-weight: 600; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+        .edit-section-body { padding: 11px; display: flex; flex-direction: column; gap: 8px; }
+        .cfg-row { display: flex; flex-direction: column; gap: 3px; }
+        .cfg-label { font-size: 0.71rem; color: var(--text-muted); font-weight: 500; }
+        .cfg-input { width: 100%; padding: 5px 7px; border: 1px solid var(--border); border-radius: 5px; font-size: 0.77rem; background: white; }
+        .cfg-input:focus { outline: none; border-color: var(--primary); }
+        .cfg-filter-row { display: flex; gap: 5px; }
+        .cfg-filter-row .cfg-input { flex: 1; }
+
+        /* ── Catalog ── */
+        .catalog-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
+        .catalog-item { padding: 10px 7px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; text-align: center; transition: all 0.15s; }
+        .catalog-item:hover { border-color: var(--primary); background: var(--primary-light); }
+        .catalog-icon { font-size: 1.2rem; margin-bottom: 3px; }
+        .catalog-label { font-size: 0.71rem; color: var(--text-muted); font-weight: 500; }
+
+        /* ── Export dropdown ── */
+        .filter-dropdown { position: relative; }
+        .filter-menu { position: absolute; top: 100%; right: 0; margin-top: 4px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-lg); min-width: 155px; padding: 5px; z-index: 200; display: none; }
+        .filter-menu.open { display: block; }
+        .filter-option { padding: 6px 8px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 0.77rem; }
+        .filter-option:hover { background: var(--bg); }
+
+        /* ── Empty state ── */
+        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 22px; color: var(--text-muted); text-align: center; gap: 7px; }
+        .empty-icon { font-size: 1.4rem; }
+        .empty-text { font-size: 0.8rem; }
+
+        /* ── Demo badge ── */
+        .demo-badge { position: fixed; bottom: 10px; right: 10px; background: var(--warning); color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; z-index: 300; }
+
+        /* ── Print ── */
         @media print {
             body { background: white !important; }
-            .header, .demo-badge { display: none !important; }
-            .main { padding: 0 !important; }
-            .grid { gap: 10px; }
-            .card { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+            .header, .filter-panel, .demo-badge, .edit-panel { display: none !important; }
+            .main { padding: 0 !important; margin-right: 0 !important; }
+            .component { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
             @page { size: landscape; margin: 1cm; }
         }
     </style>
 </head>
 <body>
-    <div class="dashboard">
-        <div class="header">
-            <h1><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg> Dashboard</h1>
-            <div class="header-right">
-                <span class="last-update" id="lastUpdate">Mis à jour: --</span>
-                <div class="filter-dropdown" id="exportDropdown">
-                    <button class="btn" onclick="toggleExportMenu()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Exporter ▾</button>
-                    <div class="filter-menu" id="exportMenu">
-                        <div class="filter-option" onclick="exportPrint()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg> Imprimer / PDF</div>
-                        <div class="filter-option" onclick="exportPNG()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg> Image PNG</div>
+<div class="dashboard">
+    <!-- ── Header ── -->
+    <div class="header">
+        <h1>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+            Dashboard
+        </h1>
+        <div class="header-filters" id="headerFilters"></div>
+        <div class="header-right">
+            <span class="last-update" id="lastUpdate">--</span>
+            <button class="btn" id="filterToggleBtn" onclick="toggleFilterPanel()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+                Filtres
+            </button>
+            <button class="btn" id="editToggleBtn" onclick="toggleEditMode()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                Modifier
+            </button>
+            <div class="filter-dropdown" id="exportDropdown">
+                <button class="btn" onclick="document.getElementById('exportMenu').classList.toggle('open');event.stopPropagation()">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Exporter
+                </button>
+                <div class="filter-menu" id="exportMenu">
+                    <div class="filter-option" onclick="exportPrint()">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                        Imprimer / PDF
+                    </div>
+                    <div class="filter-option" onclick="exportPNG()">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                        Image PNG
                     </div>
                 </div>
-                <button class="btn primary" onclick="loadAllData()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg> Actualiser</button>
             </div>
-        </div>
-        
-        <div class="main">
-            <div class="grid" id="dashboardGrid">
-                <!-- KPIs -->
-                <div class="card kpi-card total" id="kpiTotal">
-                    <div class="card-header"><span class="card-title">Total tâches</span><span class="card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"></path><rect x="9" y="3" width="6" height="4" rx="1"></rect><line x1="9" y1="12" x2="15" y2="12"></line><line x1="9" y1="16" x2="15" y2="16"></line></svg></span></div>
-                    <div class="kpi-value">--</div>
-                    <div class="kpi-label">tâches créées</div>
-                </div>
-                <div class="card kpi-card progress" id="kpiProgress">
-                    <div class="card-header"><span class="card-title">En cours</span><span class="card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg></span></div>
-                    <div class="kpi-value">--</div>
-                    <div class="kpi-label">tâches actives</div>
-                </div>
-                <div class="card kpi-card done" id="kpiDone">
-                    <div class="card-header"><span class="card-title">Terminées</span><span class="card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></span></div>
-                    <div class="kpi-value">--</div>
-                    <div class="kpi-label">cette semaine</div>
-                </div>
-                <div class="card kpi-card late" id="kpiLate">
-                    <div class="card-header"><span class="card-title">En retard</span><span class="card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></span></div>
-                    <div class="kpi-value">--</div>
-                    <div class="kpi-label">à traiter</div>
-                </div>
-                
-                <!-- Status Chart -->
-                <div class="card chart-card" id="statusChart">
-                    <div class="card-header"><span class="card-title">Répartition par statut</span></div>
-                    <div class="chart-container" id="statusChartContainer"></div>
-                </div>
-                
-                <!-- Priority Chart -->
-                <div class="card chart-card" id="priorityChart">
-                    <div class="card-header"><span class="card-title">Répartition par priorité</span></div>
-                    <div class="chart-container" id="priorityChartContainer"></div>
-                </div>
-                
-                <!-- Team Workload -->
-                <div class="card workload-card" id="workloadCard">
-                    <div class="card-header"><span class="card-title">Charge équipe</span></div>
-                    <div class="workload-list" id="workloadList"></div>
-                </div>
-                
-                <!-- Upcoming -->
-                <div class="card upcoming-card" id="upcomingCard">
-                    <div class="card-header"><span class="card-title">Échéances proches</span></div>
-                    <div class="upcoming-list" id="upcomingList"></div>
-                </div>
-                
-                <!-- Projects -->
-                <div class="card projects-card" id="projectsCard">
-                    <div class="card-header"><span class="card-title">Projets en cours</span></div>
-                    <div class="projects-list" id="projectsList"></div>
-                </div>
-            </div>
+            <button class="btn primary" onclick="loadAllData()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                Actualiser
+            </button>
         </div>
     </div>
 
-    <script>
-        // ═══════════════════════════════════════════════════════════════════════
-        // DATA & STATE
-        // ═══════════════════════════════════════════════════════════════════════
-        let tasks = [], projects = [], team = [];
-        let gristReady = false;
-        
-        const STATUS_LABELS = { todo: 'À faire', inprogress: 'En cours', review: 'En revue', done: 'Terminé' };
-        const STATUS_COLORS = { todo: '#64748b', inprogress: '#3b82f6', review: '#f59e0b', done: '#10b981' };
-        const PRIORITY_LABELS = { 1: 'Critique', 2: 'Haute', 3: 'Moyenne', 4: 'Basse' };
-        const PRIORITY_COLORS = { 1: '#ef4444', 2: '#f59e0b', 3: '#3b82f6', 4: '#64748b' };
-        const MONTHS_SHORT = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'];
-        
-        // ═══════════════════════════════════════════════════════════════════════
-        // UTILITIES
-        // ═══════════════════════════════════════════════════════════════════════
-        const gristToDate = (ts) => ts ? new Date(ts * 1000) : null;
-        const escapeHtml = (t) => { if (!t) return ''; const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
-        const isSameDay = (d1, d2) => d1 && d2 && d1.getDate() === d2.getDate() && d1.getMonth() === d2.getMonth() && d1.getFullYear() === d2.getFullYear();
-        const addDays = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
-        const startOfWeek = (d) => { const t = new Date(d); const day = t.getDay(); return addDays(t, -(day === 0 ? 6 : day - 1)); };
-        
-        const getPriority = (t) => parseInt(t?.priorite) || 3;
-        const getStatus = (t) => t?.statut || 'todo';
-        
-        const getAssigneesArray = (t) => {
-            if (!t?.assignees) return [];
-            if (Array.isArray(t.assignees)) {
-                if (t.assignees[0] === 'L') return t.assignees.slice(1);
-                return t.assignees;
-            }
-            return [];
-        };
-        
-        // ═══════════════════════════════════════════════════════════════════════
-        // STATS CALCULATION
-        // ═══════════════════════════════════════════════════════════════════════
-        function calculateStats() {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const weekStart = startOfWeek(today);
-            
-            const stats = {
-                total: tasks.length,
-                byStatus: { todo: 0, inprogress: 0, review: 0, done: 0 },
-                byPriority: { 1: 0, 2: 0, 3: 0, 4: 0 },
-                late: 0,
-                doneThisWeek: 0,
-                inProgress: 0,
-                byAssignee: {},
-                upcoming: [],
-                projectStats: {}
-            };
-            
-            tasks.forEach(t => {
-                const status = getStatus(t);
-                const priority = getPriority(t);
-                const endDate = gristToDate(t.dateEcheance);
-                const assignees = getAssigneesArray(t);
-                
-                // By status
-                if (stats.byStatus[status] !== undefined) stats.byStatus[status]++;
-                
-                // By priority
-                if (stats.byPriority[priority] !== undefined) stats.byPriority[priority]++;
-                
-                // In progress (not done)
-                if (status !== 'done') stats.inProgress++;
-                
-                // Late (past due, not done)
-                if (endDate && endDate < today && status !== 'done') {
-                    stats.late++;
-                }
-                
-                // Done this week
-                if (status === 'done' && endDate && endDate >= weekStart) {
-                    stats.doneThisWeek++;
-                }
-                
-                // By assignee
-                assignees.forEach(a => {
-                    if (!stats.byAssignee[a]) stats.byAssignee[a] = { total: 0, active: 0 };
-                    stats.byAssignee[a].total++;
-                    if (status !== 'done') stats.byAssignee[a].active++;
-                });
-                
-                // Upcoming (next 14 days, not done)
-                if (endDate && status !== 'done') {
-                    const daysUntil = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
-                    if (daysUntil <= 14) {
-                        stats.upcoming.push({ task: t, date: endDate, daysUntil });
-                    }
-                }
-                
-                // By project
-                if (t.projet) {
-                    if (!stats.projectStats[t.projet]) {
-                        stats.projectStats[t.projet] = { total: 0, done: 0, progression: 0 };
-                    }
-                    stats.projectStats[t.projet].total++;
-                    if (status === 'done') stats.projectStats[t.projet].done++;
-                    stats.projectStats[t.projet].progression += (t.progression || 0);
-                }
-            });
-            
-            // Sort upcoming by date
-            stats.upcoming.sort((a, b) => a.date - b.date);
-            
-            // Calculate project average progression
-            Object.keys(stats.projectStats).forEach(pid => {
-                const ps = stats.projectStats[pid];
-                ps.avgProgression = ps.total > 0 ? Math.round(ps.progression / ps.total) : 0;
-            });
-            
-            return stats;
-        }
-        
-        // ═══════════════════════════════════════════════════════════════════════
-        // DASH-02: EXPORT
-        // ═══════════════════════════════════════════════════════════════════════
-        function toggleExportMenu() {
-            const menu = document.getElementById('exportMenu');
-            menu.classList.toggle('open');
-        }
+    <!-- ── Filter panel ── -->
+    <div class="filter-panel" id="filterPanel"></div>
 
-        // Close menu when clicking outside
-        document.addEventListener('click', (e) => {
-            const dropdown = document.getElementById('exportDropdown');
-            if (dropdown && !dropdown.contains(e.target)) {
-                document.getElementById('exportMenu')?.classList.remove('open');
-            }
+    <!-- ── Main grid ── -->
+    <div class="main" id="main">
+        <div class="dashboard-grid" id="dashboardGrid"></div>
+    </div>
+</div>
+
+<!-- ── Edit Panel (slide-in right) ── -->
+<div class="edit-panel" id="editPanel">
+    <div class="edit-panel-hdr">
+        <span class="edit-panel-title">⚙ Modifier le dashboard</span>
+        <button class="btn" onclick="toggleEditMode()">✕ Terminer</button>
+    </div>
+    <div class="edit-panel-body" id="editPanelBody"></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════════
+// CATALOGUE & CONFIG
+// ═══════════════════════════════════════════════════════════════════════════════
+const CATALOG = {
+    kpi:      { label: 'KPI',        icon: '◈', defaultSpan: 1 },
+    donut:    { label: 'Donut',      icon: '◉', defaultSpan: 2 },
+    bars:     { label: 'Barres',     icon: '▦', defaultSpan: 2 },
+    list:     { label: 'Liste',      icon: '☰', defaultSpan: 4 },
+    workload: { label: 'Équipe',     icon: '◑', defaultSpan: 2 },
+    upcoming: { label: 'Échéances',  icon: '◷', defaultSpan: 2 },
+    projects: { label: 'Projets',    icon: '◧', defaultSpan: 2 },
+    velocity: { label: 'Vélocité',   icon: '↗', defaultSpan: 4 },
+};
+
+const CONFIG_FIELDS = {
+    kpi:      [{ key:'metric',  label:'Métrique',     options:[['total','Total tâches'],['inprogress','En cours'],['done','Terminées (tout)'],['done_week','Terminées ce sem.'],['late','En retard'],['rate','Taux de complétion %']] }],
+    donut:    [{ key:'groupBy', label:'Grouper par',  options:[['statut','Statut'],['priorite','Priorité'],['projet','Projet'],['type','Type']] }],
+    bars:     [{ key:'groupBy', label:'Grouper par',  options:[['statut','Statut'],['priorite','Priorité'],['projet','Projet'],['type','Type'],['assignee','Assigné']] }],
+    list:     [
+        { key:'preset', label:'Preset',  options:[['all','Toutes'],['overdue','En retard'],['today',"Auj."],['upcoming','À venir 14j'],['inprogress','En cours']] },
+        { key:'limit',  label:'Limite',  options:[['5','5'],['10','10'],['20','20']] },
+    ],
+    upcoming: [{ key:'horizon', label:'Horizon (j)', options:[['7','7j'],['14','14j'],['30','30j']] }],
+    velocity: [{ key:'weeks',   label:'Semaines',     options:[['4','4'],['6','6'],['8','8']] }],
+    workload: [],
+    projects: [],
+};
+
+const FILTER_FIELDS = [
+    ['', '— Aucun filtre —'],
+    ['statut',   'Statut'],
+    ['priorite', 'Priorité'],
+    ['projet',   'Projet'],
+    ['type',     'Type'],
+];
+
+const DEFAULT_LAYOUT = [
+    { id:'c1', type:'kpi',      colSpan:1, title:'Total',      config:{ metric:'total' } },
+    { id:'c2', type:'kpi',      colSpan:1, title:'En cours',   config:{ metric:'inprogress' } },
+    { id:'c3', type:'kpi',      colSpan:1, title:'Terminées',  config:{ metric:'done' } },
+    { id:'c4', type:'kpi',      colSpan:1, title:'En retard',  config:{ metric:'late' } },
+    { id:'c5', type:'donut',    colSpan:2, title:'Par statut', config:{ groupBy:'statut' } },
+    { id:'c6', type:'bars',     colSpan:2, title:'Par priorité', config:{ groupBy:'priorite' } },
+    { id:'c7', type:'workload', colSpan:2, title:'Charge équipe', config:{} },
+    { id:'c8', type:'upcoming', colSpan:2, title:'Échéances',  config:{ horizon:14 } },
+    { id:'c9', type:'projects', colSpan:2, title:'Projets',    config:{} },
+];
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════════════════
+let tasks = [], projects = [], team = [];
+let gristReady = false;
+let isEditMode = false;
+let selectedCompId = null;
+let dashConfig = { layout: DEFAULT_LAYOUT.map(c => ({...c, config:{...c.config}})) };
+let filters = { periode: 'all', projets: [], assignes: [], statuts: [] };
+let filterPanelOpen = false;
+
+const STATUS_LABELS  = { todo:'À faire', inprogress:'En cours', review:'En revue', done:'Terminé' };
+const STATUS_COLORS  = { todo:'#64748b', inprogress:'#3b82f6', review:'#f59e0b', done:'#10b981' };
+const PRIORITY_LABELS = { 1:'Critique', 2:'Haute', 3:'Moyenne', 4:'Basse' };
+const PRIORITY_COLORS = { 1:'#ef4444', 2:'#f59e0b', 3:'#3b82f6', 4:'#64748b' };
+const MONTHS_SHORT = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'];
+let _compIdCounter = 100;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════════════════════════
+const gristToDate  = ts => ts ? new Date(ts * 1000) : null;
+const escapeHtml   = t  => { if (!t) return ''; const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
+const isSameDay    = (a,b) => a && b && a.getDate()===b.getDate() && a.getMonth()===b.getMonth() && a.getFullYear()===b.getFullYear();
+const addDays      = (d,n) => { const r=new Date(d); r.setDate(r.getDate()+n); return r; };
+const startOfWeek  = d => { const t=new Date(d); const dow=t.getDay(); return addDays(t,-(dow===0?6:dow-1)); };
+const getPriority  = t => parseInt(t?.priorite)||3;
+const getStatus    = t => t?.statut||'todo';
+
+const getAssigneesArray = t => {
+    if (!t?.assignees) return [];
+    if (Array.isArray(t.assignees)) return t.assignees[0]==='L' ? t.assignees.slice(1) : t.assignees;
+    return [];
+};
+
+function getWeekNumber(d) {
+    const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay()||7));
+    const y = new Date(Date.UTC(date.getUTCFullYear(),0,1));
+    return Math.ceil((((date-y)/86400000)+1)/7);
+}
+
+function getPeriodStart(periode) {
+    const d = new Date(); d.setHours(0,0,0,0);
+    if (periode === 'week')    return startOfWeek(d);
+    if (periode === 'month')   { d.setDate(1); return d; }
+    if (periode === 'quarter') { d.setMonth(Math.floor(d.getMonth()/3)*3,1); return d; }
+    return new Date(0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FILTRES GLOBAUX
+// ═══════════════════════════════════════════════════════════════════════════════
+function getFilteredTasks(compFilter) {
+    let ft = tasks;
+    if (filters.periode !== 'all') {
+        const pStart = getPeriodStart(filters.periode);
+        ft = ft.filter(t => { const d=gristToDate(t.dateEcheance); return d && d >= pStart; });
+    }
+    if (filters.projets.length)  ft = ft.filter(t => filters.projets.includes(String(t.projet)));
+    if (filters.assignes.length) ft = ft.filter(t => getAssigneesArray(t).some(a => filters.assignes.includes(String(a))));
+    if (filters.statuts.length)  ft = ft.filter(t => filters.statuts.includes(getStatus(t)));
+    if (compFilter && compFilter.field && compFilter.value) {
+        const {field, value} = compFilter;
+        ft = ft.filter(t => {
+            if (field==='statut')   return getStatus(t)===value;
+            if (field==='priorite') return String(getPriority(t))===String(value);
+            if (field==='projet')   return String(t.projet)===String(value);
+            if (field==='type')     return (t.type||'tache')===value;
+            return true;
         });
+    }
+    return ft;
+}
 
-        function exportPrint() {
-            document.getElementById('exportMenu')?.classList.remove('open');
-            setTimeout(() => window.print(), 100);
-        }
+function hasActiveFilters() {
+    return filters.periode!=='all' || filters.projets.length || filters.assignes.length || filters.statuts.length;
+}
 
-        async function exportPNG() {
-            document.getElementById('exportMenu')?.classList.remove('open');
-            if (!window.html2canvas) {
-                const script = document.createElement('script');
-                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-                document.head.appendChild(script);
-                await new Promise(resolve => script.onload = resolve);
-            }
-            
-            try {
-                const element = document.getElementById('dashboardGrid');
-                const canvas = await html2canvas(element, { backgroundColor: '#f8fafc', scale: 2, logging: false });
-                const link = document.createElement('a');
-                link.download = 'dashboard-' + new Date().toISOString().split('T')[0] + '.png';
-                link.href = canvas.toDataURL('image/png');
-                link.click();
-            } catch (e) {
-                console.error('Export error:', e);
-            }
-        }
-        
-        // ═══════════════════════════════════════════════════════════════════════
-        // RENDER
-        // ═══════════════════════════════════════════════════════════════════════
-        function render() {
-            const stats = calculateStats();
-            
-            renderKPIs(stats);
-            renderStatusChart(stats);
-            renderPriorityChart(stats);
-            renderWorkload(stats);
-            renderUpcoming(stats);
-            renderProjects(stats);
-            
-            document.getElementById('lastUpdate').textContent = 'Mis à jour: ' + new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-        }
-        
-        function renderKPIs(stats) {
-            // Total
-            document.querySelector('#kpiTotal .kpi-value').textContent = stats.total;
-            
-            // In progress
-            document.querySelector('#kpiProgress .kpi-value').textContent = stats.inProgress;
-            
-            // Done this week
-            document.querySelector('#kpiDone .kpi-value').textContent = stats.doneThisWeek;
-            
-            // Late
-            document.querySelector('#kpiLate .kpi-value').textContent = stats.late;
-            const lateCard = document.getElementById('kpiLate');
-            if (stats.late > 0) {
-                lateCard.style.borderColor = '#ef4444';
-                lateCard.style.background = '#fef2f2';
-            } else {
-                lateCard.style.borderColor = '';
-                lateCard.style.background = '';
-            }
-        }
-        
-        function renderStatusChart(stats) {
-            const container = document.getElementById('statusChartContainer');
-            const total = stats.total || 1;
-            
-            // Calculate percentages
-            const data = Object.entries(stats.byStatus).map(([key, value]) => ({
-                key, value, percent: Math.round((value / total) * 100), color: STATUS_COLORS[key], label: STATUS_LABELS[key]
-            }));
-            
-            // SVG Donut
-            let offset = 0;
-            const radius = 60;
-            const circumference = 2 * Math.PI * radius;
-            
-            let paths = '';
-            data.forEach(d => {
-                if (d.value > 0) {
-                    const length = (d.percent / 100) * circumference;
-                    paths += `<circle cx="80" cy="80" r="${radius}" fill="none" stroke="${d.color}" stroke-width="20" stroke-dasharray="${length} ${circumference}" stroke-dashoffset="${-offset}" />`;
-                    offset += length;
-                }
-            });
-            
-            // Legend
-            let legend = '';
-            data.forEach(d => {
-                legend += `<div class="legend-item"><span class="legend-dot" style="background:${d.color}"></span><span>${d.label}</span><span class="legend-value">${d.value}</span></div>`;
-            });
-            
-            container.innerHTML = `
-                <div class="donut-chart">
-                    <svg width="160" height="160">${paths}</svg>
-                    <div class="donut-center">
-                        <div class="donut-center-value">${stats.total}</div>
-                        <div class="donut-center-label">tâches</div>
+function toggleFilterProjet(id) { const s=String(id); filters.projets=filters.projets.includes(s)?filters.projets.filter(x=>x!==s):[...filters.projets,s]; broadcastFilters(); render(); }
+function toggleFilterAssigne(id) { const s=String(id); filters.assignes=filters.assignes.includes(s)?filters.assignes.filter(x=>x!==s):[...filters.assignes,s]; broadcastFilters(); render(); }
+function toggleFilterStatut(v)  { filters.statuts=filters.statuts.includes(v)?filters.statuts.filter(x=>x!==v):[...filters.statuts,v]; broadcastFilters(); render(); }
+function setPeriode(p)           { filters.periode=p; broadcastFilters(); render(); }
+function clearFilters()          { filters={periode:'all',projets:[],assignes:[],statuts:[]}; broadcastFilters(); render(); }
+
+function broadcastFilters() {
+    if (gristReady) grist.widgetApi?.setOptions({ dash: dashConfig, filters });
+}
+
+function toggleFilterPanel() {
+    filterPanelOpen = !filterPanelOpen;
+    document.getElementById('filterPanel').classList.toggle('open', filterPanelOpen);
+    document.getElementById('filterToggleBtn').classList.toggle('active', filterPanelOpen);
+    if (filterPanelOpen) renderFilterPanel();
+}
+
+function renderFilterPanel() {
+    const PERIODE_OPTIONS = [['week','Semaine'],['month','Mois'],['quarter','Trimestre'],['all','Tout']];
+    let html = `
+        <div class="filter-section">
+            <div class="filter-section-label">Période</div>
+            <div class="filter-btns">
+                ${PERIODE_OPTIONS.map(([v,l]) => `<button class="filter-btn ${filters.periode===v?'active':''}" onclick="setPeriode('${v}')">${l}</button>`).join('')}
+            </div>
+        </div>`;
+    if (projects.length) html += `
+        <div class="filter-section">
+            <div class="filter-section-label">Projet</div>
+            <div class="filter-checkboxes">
+                ${projects.filter(p=>p.actif!==false).map(p => `<span class="filter-check ${filters.projets.includes(String(p.id))?'active':''}" onclick="toggleFilterProjet(${p.id})"><span style="color:${p.couleur||'#6366f1'}">●</span> ${escapeHtml(p.nom)}</span>`).join('')}
+            </div>
+        </div>`;
+    if (team.length) html += `
+        <div class="filter-section">
+            <div class="filter-section-label">Assigné</div>
+            <div class="filter-checkboxes">
+                ${team.filter(m=>m.actif!==false).map(m => `<span class="filter-check ${filters.assignes.includes(String(m.id))?'active':''}" onclick="toggleFilterAssigne(${m.id})">${escapeHtml(m.nom)}</span>`).join('')}
+            </div>
+        </div>`;
+    html += `
+        <div class="filter-section">
+            <div class="filter-section-label">Statut</div>
+            <div class="filter-checkboxes">
+                ${Object.entries(STATUS_LABELS).map(([v,l]) => `<span class="filter-check ${filters.statuts.includes(v)?'active':''}" onclick="toggleFilterStatut('${v}')">${l}</span>`).join('')}
+            </div>
+        </div>`;
+    if (hasActiveFilters()) html += `<div class="filter-section" style="justify-content:flex-end"><button class="filter-clear" onclick="clearFilters()">Réinitialiser</button></div>`;
+    document.getElementById('filterPanel').innerHTML = html;
+}
+
+function renderFilterChips() {
+    let html = '';
+    if (filters.periode!=='all') {
+        const labels={'week':'Semaine','month':'Mois','quarter':'Trimestre'};
+        html += `<span class="filter-chip">${labels[filters.periode]}<button onclick="setPeriode('all')">×</button></span>`;
+    }
+    filters.projets.forEach(id => {
+        const p = projects.find(x=>String(x.id)===id);
+        if (p) html += `<span class="filter-chip">${escapeHtml(p.nom)}<button onclick="toggleFilterProjet(${p.id})">×</button></span>`;
+    });
+    filters.assignes.forEach(id => {
+        const m = team.find(x=>String(x.id)===id);
+        if (m) html += `<span class="filter-chip">${escapeHtml((m.nom||'').split(' ')[0])}<button onclick="toggleFilterAssigne(${m.id})">×</button></span>`;
+    });
+    filters.statuts.forEach(v => {
+        html += `<span class="filter-chip">${STATUS_LABELS[v]}<button onclick="toggleFilterStatut('${v}')">×</button></span>`;
+    });
+    document.getElementById('headerFilters').innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MODE ÉDITION
+// ═══════════════════════════════════════════════════════════════════════════════
+function toggleEditMode() {
+    isEditMode = !isEditMode;
+    selectedCompId = null;
+    document.getElementById('editPanel').classList.toggle('open', isEditMode);
+    document.getElementById('main').classList.toggle('panel-open', isEditMode);
+    document.getElementById('editToggleBtn').classList.toggle('active', isEditMode);
+    render();
+    if (isEditMode) renderEditPanel();
+}
+
+function selectComponent(id, e) {
+    if (e) e.stopPropagation();
+    selectedCompId = (selectedCompId === id) ? null : id;
+    renderGrid();
+    renderEditPanel();
+}
+
+function setSpan(id, span, e) {
+    if (e) e.stopPropagation();
+    const c = dashConfig.layout.find(x=>x.id===id);
+    if (c) { c.colSpan = span; renderGrid(); renderEditPanel(); saveConfig(); }
+}
+
+function removeComponent(id, e) {
+    if (e) e.stopPropagation();
+    dashConfig.layout = dashConfig.layout.filter(x=>x.id!==id);
+    if (selectedCompId===id) selectedCompId = null;
+    renderGrid(); renderEditPanel(); saveConfig();
+}
+
+function addComponent(type) {
+    const id = 'c' + (++_compIdCounter);
+    const def = CATALOG[type];
+    const defaults = { kpi:{ metric:'total' }, donut:{ groupBy:'statut' }, bars:{ groupBy:'statut' }, list:{ preset:'all', limit:10 }, upcoming:{ horizon:14 }, velocity:{ weeks:6 }, workload:{}, projects:{} };
+    dashConfig.layout.push({ id, type, colSpan: def.defaultSpan, title: def.label, config: { ...defaults[type] } });
+    selectedCompId = id;
+    renderGrid(); renderEditPanel(); saveConfig();
+    // scroll to bottom
+    document.getElementById('dashboardGrid').lastElementChild?.scrollIntoView({ behavior:'smooth' });
+}
+
+let _titleTimer = null;
+function updateCompTitle(id, val) {
+    const c = dashConfig.layout.find(x=>x.id===id);
+    if (!c) return;
+    c.title = val;
+    clearTimeout(_titleTimer);
+    _titleTimer = setTimeout(() => { renderGrid(); saveConfig(); }, 300);
+}
+
+function updateCompConfig(id, key, val, e) {
+    if (e) e.stopPropagation();
+    const c = dashConfig.layout.find(x=>x.id===id);
+    if (!c) return;
+    c.config[key] = val;
+    renderGrid(); renderEditPanel(); saveConfig();
+}
+
+function updateCompFilterField(id, field, e) {
+    if (e) e.stopPropagation();
+    const c = dashConfig.layout.find(x=>x.id===id);
+    if (!c) return;
+    c.config.compFilter = { field, value: '' };
+    renderGrid(); renderEditPanel(); saveConfig();
+}
+
+function updateCompFilterValue(id, value, e) {
+    if (e) e.stopPropagation();
+    const c = dashConfig.layout.find(x=>x.id===id);
+    if (!c) return;
+    if (!c.config.compFilter) c.config.compFilter = { field:'', value:'' };
+    c.config.compFilter.value = value;
+    renderGrid(); renderEditPanel(); saveConfig();
+}
+
+function getFilterValueOptions(field) {
+    if (field==='statut')   return Object.entries(STATUS_LABELS);
+    if (field==='priorite') return Object.entries(PRIORITY_LABELS);
+    if (field==='projet')   return projects.map(p => [String(p.id), p.nom]);
+    if (field==='type')     return [['tache','Tâche'],['jalon','Jalon'],['reunion','Réunion']];
+    return [];
+}
+
+function renderEditPanel() {
+    const body = document.getElementById('editPanelBody');
+    if (!body) return;
+    let html = '';
+
+    // ── Config du composant sélectionné ──
+    const comp = dashConfig.layout.find(x=>x.id===selectedCompId);
+    if (comp) {
+        const cfgFields = CONFIG_FIELDS[comp.type] || [];
+        const cf = comp.config.compFilter || { field:'', value:'' };
+        const valueOpts = getFilterValueOptions(cf.field);
+        html += `<div class="edit-section">
+            <div class="edit-section-hdr">⚙ ${escapeHtml(comp.title)}</div>
+            <div class="edit-section-body">
+                <div class="cfg-row">
+                    <div class="cfg-label">Titre</div>
+                    <input class="cfg-input" type="text" value="${escapeHtml(comp.title)}" oninput="updateCompTitle('${comp.id}',this.value)" />
+                </div>
+                ${cfgFields.map(f => `
+                    <div class="cfg-row">
+                        <div class="cfg-label">${f.label}</div>
+                        <select class="cfg-input" onchange="updateCompConfig('${comp.id}','${f.key}',this.value,event)">
+                            ${f.options.map(([v,l]) => `<option value="${v}" ${String(comp.config[f.key])===String(v)?'selected':''}>${l}</option>`).join('')}
+                        </select>
+                    </div>`).join('')}
+                <div class="cfg-row">
+                    <div class="cfg-label">Filtre composant</div>
+                    <div class="cfg-filter-row">
+                        <select class="cfg-input" onchange="updateCompFilterField('${comp.id}',this.value,event)">
+                            ${FILTER_FIELDS.map(([v,l]) => `<option value="${v}" ${cf.field===v?'selected':''}>${l}</option>`).join('')}
+                        </select>
+                        ${cf.field ? `<select class="cfg-input" onchange="updateCompFilterValue('${comp.id}',this.value,event)">
+                            ${valueOpts.map(([v,l]) => `<option value="${v}" ${String(cf.value)===String(v)?'selected':''}>${l}</option>`).join('')}
+                        </select>` : ''}
                     </div>
                 </div>
-                <div class="donut-legend">${legend}</div>
-            `;
-        }
-        
-        function renderPriorityChart(stats) {
-            const container = document.getElementById('priorityChartContainer');
-            const maxValue = Math.max(...Object.values(stats.byPriority), 1);
-            
-            let html = '<div class="bar-chart">';
-            [1, 2, 3, 4].forEach(p => {
-                const value = stats.byPriority[p] || 0;
-                const percent = Math.round((value / maxValue) * 100);
-                html += `
-                    <div class="bar-row">
-                        <div class="bar-label">${PRIORITY_LABELS[p]}</div>
-                        <div class="bar-track">
-                            <div class="bar-fill p${p}" style="width:${percent}%"><span>${value}</span></div>
-                        </div>
-                    </div>
-                `;
-            });
-            html += '</div>';
-            container.innerHTML = html;
-        }
-        
-        function renderWorkload(stats) {
-            const container = document.getElementById('workloadList');
-            const maxActive = Math.max(...Object.values(stats.byAssignee).map(a => a.active), 1);
-            
-            if (team.length === 0) {
-                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 00-3-3.87"></path><path d="M16 3.13a4 4 0 010 7.75"></path></svg></div><div class="empty-state-text">Aucun membre</div></div>';
-                return;
-            }
-            
-            let html = '';
-            team.filter(m => m.actif !== false).forEach(member => {
-                const data = stats.byAssignee[member.id] || { total: 0, active: 0 };
-                const percent = Math.round((data.active / maxActive) * 100);
-                const level = data.active > 5 ? 'high' : data.active > 3 ? 'medium' : '';
-                const initials = (member.nom || '?').split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
-                const memberColor = member.couleur || '#4f46e5';  // TEAM-01: couleur personnalisée
-                
-                html += `
-                    <div class="workload-item">
-                        <div class="workload-avatar" style="background:${memberColor}">${initials}</div>
-                        <div class="workload-info">
-                            <div class="workload-name">${escapeHtml(member.nom)}</div>
-                            <div class="workload-tasks">${data.active} active${data.active > 1 ? 's' : ''} / ${data.total} total</div>
-                        </div>
-                        <div class="workload-bar">
-                            <div class="workload-bar-fill ${level}" style="width:${percent}%"></div>
-                        </div>
-                    </div>
-                `;
-            });
-            container.innerHTML = html || '<div class="empty-state"><div class="empty-state-text">Aucune donnée</div></div>';
-        }
-        
-        function renderUpcoming(stats) {
-            const container = document.getElementById('upcomingList');
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            
-            if (stats.upcoming.length === 0) {
-                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg></div><div class="empty-state-text">Aucune échéance proche</div></div>';
-                return;
-            }
-            
-            let html = '';
-            stats.upcoming.slice(0, 8).forEach(item => {
-                const { task, date, daysUntil } = item;
-                const priority = getPriority(task);
-                const project = projects.find(p => p.id === task.projet);
-                
-                let dateClass = '';
-                if (daysUntil < 0) dateClass = 'late';
-                else if (daysUntil === 0) dateClass = 'today';
-                
-                html += `
-                    <div class="upcoming-item" onclick="selectTask(${task.id})">
-                        <div class="upcoming-priority p${priority}"></div>
-                        <div class="upcoming-date ${dateClass}">
-                            <div class="upcoming-date-day">${date.getDate()}</div>
-                            <div class="upcoming-date-month">${MONTHS_SHORT[date.getMonth()]}</div>
-                        </div>
-                        <div class="upcoming-info">
-                            <div class="upcoming-title">${escapeHtml(task.titre)}</div>
-                            <div class="upcoming-meta">
-                                ${project ? `<span style="color:${project.couleur}">● ${escapeHtml(project.nom)}</span>` : ''}
-                                <span>${daysUntil < 0 ? Math.abs(daysUntil) + 'j de retard' : daysUntil === 0 ? "Aujourd'hui" : 'Dans ' + daysUntil + 'j'}</span>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            });
-            container.innerHTML = html;
-        }
-        
-        function renderProjects(stats) {
-            const container = document.getElementById('projectsList');
-            
-            const activeProjects = projects.filter(p => p.actif !== false && stats.projectStats[p.id]);
-            
-            if (activeProjects.length === 0) {
-                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"></path></svg></div><div class="empty-state-text">Aucun projet actif</div></div>';
-                return;
-            }
-            
-            let html = '';
-            activeProjects.forEach(project => {
-                const ps = stats.projectStats[project.id] || { total: 0, done: 0, avgProgression: 0 };
-                const completionPercent = ps.total > 0 ? Math.round((ps.done / ps.total) * 100) : 0;
-                
-                html += `
-                    <div class="project-item">
-                        <div class="project-color" style="background:${project.couleur || '#6366f1'}"></div>
-                        <div class="project-info">
-                            <div class="project-name">${escapeHtml(project.nom)}</div>
-                            <div class="project-stats">${ps.done}/${ps.total} tâches terminées</div>
-                        </div>
-                        <div class="project-progress">
-                            <div class="project-progress-bar">
-                                <div class="project-progress-fill" style="width:${completionPercent}%"></div>
-                            </div>
-                            <div class="project-progress-text">${completionPercent}%</div>
-                        </div>
-                    </div>
-                `;
-            });
-            container.innerHTML = html;
-        }
-        
-        function selectTask(taskId) {
-            if (gristReady && grist.setSelectedRows) {
-                grist.setSelectedRows([taskId]);
-            }
-        }
-        
-        // ═══════════════════════════════════════════════════════════════════════
-        // GRIST INTEGRATION
-        // ═══════════════════════════════════════════════════════════════════════
-        function convert(data) {
-            if (!data || Array.isArray(data)) return data || [];
-            const cols = Object.keys(data);
-            if (!cols.length) return [];
-            const n = data[cols[0]]?.length || 0;
-            const r = [];
-            for (let i = 0; i < n; i++) { const rec = {}; cols.forEach(c => rec[c] = data[c][i]); r.push(rec); }
-            return r;
-        }
-        
-        async function loadAllData() {
-            if (!gristReady) return;
-            try {
-                const [tasksData, projectsData, teamData] = await Promise.all([
-                    grist.docApi.fetchTable('Tasks'),
-                    grist.docApi.fetchTable('Projects'),
-                    grist.docApi.fetchTable('Team')
-                ]);
-                tasks = convert(tasksData);
-                projects = convert(projectsData);
-                team = convert(teamData);
-                render();
-            } catch (e) {
-                console.log('Error loading data:', e);
-            }
-        }
-        
-        async function init() {
-            try {
-                await grist.ready({ requiredAccess: 'full' });
-                gristReady = true;
-                await loadAllData();
-                grist.onRecords(async () => await loadAllData());
-            } catch (e) {
-                console.log('Demo mode');
-                useDemoMode();
-            }
-        }
-        
-        function useDemoMode() {
-            document.body.insertAdjacentHTML('beforeend', '<div class="demo-badge">Démo</div>');
+            </div>
+        </div>`;
+    }
 
-            team = [
-                { id: 1, nom: 'Alice Martin', actif: true, couleur: '#4f46e5' },
-                { id: 2, nom: 'Bob Durant', actif: true, couleur: '#10b981' },
-                { id: 3, nom: 'Claire Bernard', actif: true, couleur: '#f59e0b' }
-            ];
-            projects = [
-                { id: 1, nom: 'Refonte Portail', couleur: '#4f46e5', actif: true },
-                { id: 2, nom: 'App Mobile', couleur: '#10b981', actif: true },
-                { id: 3, nom: 'API v2', couleur: '#f59e0b', actif: true }
-            ];
+    // ── Composants actifs ──
+    html += `<div class="edit-section">
+        <div class="edit-section-hdr">Composants actifs</div>
+        <div class="edit-section-body" style="gap:5px">
+            ${dashConfig.layout.map(c => `
+                <div style="display:flex;align-items:center;gap:6px;padding:5px 7px;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:${c.id===selectedCompId?'var(--primary-light)':'white'}" onclick="selectComponent('${c.id}',event)">
+                    <span style="font-size:0.78rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${CATALOG[c.type]?.icon||'?'} ${escapeHtml(c.title)}</span>
+                    <div class="span-btns">${[1,2,3,4].map(n=>`<button class="span-btn ${c.colSpan===n?'active':''}" onclick="setSpan('${c.id}',${n},event)">${n}</button>`).join('')}</div>
+                    <button class="btn-icon danger" onclick="removeComponent('${c.id}',event)">×</button>
+                </div>`).join('')}
+        </div>
+    </div>`;
 
-            const today = new Date();
-            const day = (d) => Math.floor(new Date(today.getFullYear(), today.getMonth(), today.getDate() + d).getTime() / 1000);
+    // ── Ajouter un composant ──
+    html += `<div class="edit-section">
+        <div class="edit-section-hdr">+ Ajouter un composant</div>
+        <div class="edit-section-body">
+            <div class="catalog-grid">
+                ${Object.entries(CATALOG).map(([type,def]) => `
+                    <div class="catalog-item" onclick="addComponent('${type}')">
+                        <div class="catalog-icon">${def.icon}</div>
+                        <div class="catalog-label">${def.label}</div>
+                    </div>`).join('')}
+            </div>
+        </div>
+    </div>`;
 
-            tasks = [
-                { id: 1, titre: 'Analyse besoins', priorite: '1', projet: 1, dateDebut: day(-10), dateEcheance: day(-5), progression: 100, statut: 'done', type: 'tache', assignees: ['L', 1] },
-                { id: 2, titre: 'Dev Backend', priorite: '1', projet: 1, dateDebut: day(-4), dateEcheance: day(2), progression: 60, statut: 'inprogress', type: 'tache', assignees: ['L', 1, 2] },
-                { id: 3, titre: 'Design UI', priorite: '2', projet: 2, dateDebut: day(-5), dateEcheance: day(1), progression: 80, statut: 'review', type: 'tache', assignees: ['L', 3] },
-                { id: 4, titre: 'Livraison MVP', priorite: '1', projet: 1, dateDebut: day(15), dateEcheance: day(15), progression: 0, statut: 'todo', type: 'jalon', assignees: ['L', 1] },
-                { id: 5, titre: 'Tests QA', priorite: '3', projet: 2, dateDebut: day(5), dateEcheance: day(12), progression: 0, statut: 'todo', type: 'tache', assignees: ['L', 2] },
-                { id: 6, titre: 'Documentation', priorite: '4', projet: 3, dateDebut: day(-2), dateEcheance: day(-1), progression: 20, statut: 'inprogress', type: 'tache', assignees: ['L', 3] },
-                { id: 7, titre: 'Correction bugs', priorite: '2', projet: 1, dateDebut: day(0), dateEcheance: day(3), progression: 10, statut: 'inprogress', type: 'tache', assignees: ['L', 2] },
-                { id: 8, titre: 'Réunion client', priorite: '2', projet: 2, dateDebut: day(7), dateEcheance: day(7), progression: 0, statut: 'todo', type: 'reunion', assignees: ['L', 1, 3] },
-                { id: 9, titre: 'Migration DB', priorite: '1', projet: 3, dateDebut: day(-3), dateEcheance: day(0), progression: 90, statut: 'review', type: 'tache', assignees: ['L', 1] },
-                { id: 10, titre: 'Formation équipe', priorite: '3', projet: 1, dateDebut: day(10), dateEcheance: day(14), progression: 0, statut: 'todo', type: 'reunion', assignees: ['L', 2, 3] }
-            ];
+    body.innerHTML = html;
+}
 
-            render();
-        }
-        
-        // Init
-        init();
-    </script>
+// ═══════════════════════════════════════════════════════════════════════════════
+// RENDER GRID
+// ═══════════════════════════════════════════════════════════════════════════════
+function renderGrid() {
+    const grid = document.getElementById('dashboardGrid');
+    grid.innerHTML = '';
+    grid.className = 'dashboard-grid' + (isEditMode ? ' edit-mode' : '');
+    dashConfig.layout.forEach(comp => grid.appendChild(createComp(comp)));
+}
+
+function createComp(comp) {
+    const div = document.createElement('div');
+    div.className = 'component' + (isEditMode && selectedCompId===comp.id ? ' selected' : '');
+    div.dataset.span = comp.colSpan;
+    div.dataset.id = comp.id;
+
+    const cf = comp.config.compFilter;
+    const hasCF = cf && cf.field && cf.value;
+    const cfLabel = hasCF ? ` <span class="comp-filter-badge">${cf.field}=${cf.value}</span>` : '';
+
+    const editControls = isEditMode ? `
+        <div class="edit-controls" onclick="event.stopPropagation()">
+            <div class="span-btns">${[1,2,3,4].map(n=>`<button class="span-btn ${comp.colSpan===n?'active':''}" onclick="setSpan('${comp.id}',${n},event)">${n}</button>`).join('')}</div>
+            <button class="btn-icon ${selectedCompId===comp.id?'active':''}" onclick="selectComponent('${comp.id}',event)" title="Configurer">⚙</button>
+            <button class="btn-icon danger" onclick="removeComponent('${comp.id}',event)" title="Supprimer">×</button>
+        </div>` : '';
+
+    const ft = getFilteredTasks(hasCF ? cf : null);
+
+    div.innerHTML = `
+        <div class="comp-header">
+            <div class="comp-title-wrap">
+                <span class="comp-title">${escapeHtml(comp.title)}</span>${cfLabel}
+            </div>
+            ${editControls}
+        </div>
+        <div class="comp-body">${renderCompBody(comp, ft)}</div>`;
+
+    if (isEditMode) div.addEventListener('click', () => selectComponent(comp.id));
+    return div;
+}
+
+function renderCompBody(comp, ft) {
+    switch (comp.type) {
+        case 'kpi':      return renderKPI(comp, ft);
+        case 'donut':    return renderDonut(comp, ft);
+        case 'bars':     return renderBars(comp, ft);
+        case 'list':     return renderList(comp, ft);
+        case 'workload': return renderWorkload(comp, ft);
+        case 'upcoming': return renderUpcoming(comp, ft);
+        case 'projects': return renderProjects(comp, ft);
+        case 'velocity': return renderVelocity(comp, ft);
+        default: return '<div class="empty-state"><div class="empty-text">Type inconnu</div></div>';
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RENDERERS
+// ═══════════════════════════════════════════════════════════════════════════════
+function renderKPI(comp, ft) {
+    const metric = comp.config.metric || 'total';
+    const today = new Date(); today.setHours(0,0,0,0);
+    const weekStart = startOfWeek(today);
+    let value = 0, label = '';
+    switch (metric) {
+        case 'total':     value = ft.length;                                                                            label = 'tâches au total'; break;
+        case 'inprogress':value = ft.filter(t=>getStatus(t)!=='done').length;                                           label = 'tâches actives'; break;
+        case 'done':      value = ft.filter(t=>getStatus(t)==='done').length;                                           label = 'tâches terminées'; break;
+        case 'done_week': value = ft.filter(t=>getStatus(t)==='done' && gristToDate(t.dateEcheance)>=weekStart).length; label = 'terminées cette semaine'; break;
+        case 'late':      value = ft.filter(t=>{ const d=gristToDate(t.dateEcheance); return d&&d<today&&getStatus(t)!=='done'; }).length; label = 'en retard'; break;
+        case 'rate':      { const done=ft.filter(t=>getStatus(t)==='done').length; value=ft.length?Math.round(done/ft.length*100):0; label='% complété'; break; }
+    }
+    const cls = { total:'kpi-total', inprogress:'kpi-inprogress', done:'kpi-done', done_week:'kpi-done_week', late:'kpi-late', rate:'kpi-rate' }[metric]||'';
+    const lateClass = metric==='late'&&value>0 ? 'kpi-late-border' : '';
+    if (lateClass) setTimeout(()=>{ const el=document.querySelector(`[data-id="${comp.id}"]`); if(el) el.classList.add(lateClass); },0);
+    return `<div class="${cls}"><div class="kpi-value">${metric==='rate'?value+'%':value}</div><div class="kpi-label">${label}</div></div>`;
+}
+
+function groupByField(ft, field) {
+    const counts = {};
+    ft.forEach(t => {
+        if (field==='assignee') { getAssigneesArray(t).forEach(a=>{ counts[String(a)]=(counts[String(a)]||0)+1; }); return; }
+        let key;
+        if (field==='statut')   key = getStatus(t);
+        else if (field==='priorite') key = String(getPriority(t));
+        else if (field==='projet')   key = String(t.projet||'');
+        else if (field==='type')     key = t.type||'tache';
+        if (key!==undefined) counts[key]=(counts[key]||0)+1;
+    });
+    if (field==='statut')   return Object.entries(STATUS_LABELS).map(([k,l])=>({ key:k, label:l, count:counts[k]||0, color:STATUS_COLORS[k] }));
+    if (field==='priorite') return [1,2,3,4].map(k=>({ key:String(k), label:PRIORITY_LABELS[k], count:counts[String(k)]||0, color:PRIORITY_COLORS[k] }));
+    if (field==='projet')   return projects.filter(p=>counts[String(p.id)]).map(p=>({ key:String(p.id), label:p.nom, count:counts[String(p.id)]||0, color:p.couleur||'#6366f1' }));
+    if (field==='type')     return [['tache','Tâche','#3b82f6'],['jalon','Jalon','#f59e0b'],['reunion','Réunion','#10b981']].map(([k,l,c])=>({ key:k, label:l, count:counts[k]||0, color:c }));
+    if (field==='assignee') return team.filter(m=>counts[String(m.id)]).map(m=>({ key:String(m.id), label:(m.nom||'?').split(' ')[0], count:counts[String(m.id)]||0, color:m.couleur||'#4f46e5' }));
+    return [];
+}
+
+function renderDonut(comp, ft) {
+    const groups = groupByField(ft, comp.config.groupBy||'statut').filter(g=>g.count>0);
+    if (!groups.length) return '<div class="empty-state"><div class="empty-text">Aucune donnée</div></div>';
+    const total = ft.length||1;
+    const R=56, C=2*Math.PI*R;
+    let offset=0, paths='', legend='';
+    groups.forEach(g => {
+        const len=(g.count/total)*C;
+        paths+=`<circle cx="70" cy="70" r="${R}" fill="none" stroke="${g.color}" stroke-width="18" stroke-dasharray="${len} ${C}" stroke-dashoffset="${-offset}"/>`;
+        offset+=len;
+        legend+=`<div class="legend-item"><span class="legend-dot" style="background:${g.color}"></span><span>${escapeHtml(g.label)}</span><span class="legend-value">${g.count}</span></div>`;
+    });
+    return `<div class="donut-wrap">
+        <div class="donut-chart" style="width:140px;height:140px">
+            <svg width="140" height="140">${paths}</svg>
+            <div class="donut-center"><div class="donut-center-value">${ft.length}</div><div class="donut-center-label">tâches</div></div>
+        </div>
+        <div class="donut-legend">${legend}</div>
+    </div>`;
+}
+
+function renderBars(comp, ft) {
+    const groups = groupByField(ft, comp.config.groupBy||'statut');
+    const max = Math.max(...groups.map(g=>g.count), 1);
+    return `<div class="bar-chart">${groups.map(g => `
+        <div class="bar-row">
+            <div class="bar-label">${escapeHtml(g.label)}</div>
+            <div class="bar-track"><div class="bar-fill" style="width:${Math.round(g.count/max*100)}%;background:${g.color}"><span>${g.count}</span></div></div>
+        </div>`).join('')}</div>`;
+}
+
+function renderWorkload(comp, ft) {
+    if (!team.length) return '<div class="empty-state"><div class="empty-icon">◑</div><div class="empty-text">Aucun membre Team</div></div>';
+    const byAssignee = {};
+    ft.forEach(t => {
+        getAssigneesArray(t).forEach(a => {
+            if (!byAssignee[a]) byAssignee[a]={ total:0, active:0 };
+            byAssignee[a].total++;
+            if (getStatus(t)!=='done') byAssignee[a].active++;
+        });
+    });
+    const maxActive = Math.max(...team.map(m=>(byAssignee[m.id]||{}).active||0), 1);
+    const members = team.filter(m=>m.actif!==false);
+    if (!members.length) return '<div class="empty-state"><div class="empty-text">Aucun membre actif</div></div>';
+    return `<div class="workload-list">${members.map(m => {
+        const d=byAssignee[m.id]||{total:0,active:0};
+        const pct=Math.round(d.active/maxActive*100);
+        const lvl=d.active>5?'high':d.active>3?'medium':'';
+        const ini=(m.nom||'?').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+        return `<div class="workload-item">
+            <div class="workload-avatar" style="background:${m.couleur||'#4f46e5'}">${ini}</div>
+            <div class="workload-info"><div class="workload-name">${escapeHtml(m.nom)}</div><div class="workload-tasks">${d.active} active${d.active>1?'s':''} / ${d.total} total</div></div>
+            <div class="workload-bar"><div class="workload-bar-fill ${lvl}" style="width:${pct}%"></div></div>
+        </div>`;
+    }).join('')}</div>`;
+}
+
+function renderUpcoming(comp, ft) {
+    const horizon = parseInt(comp.config.horizon)||14;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const upcoming = ft.filter(t => {
+        const d=gristToDate(t.dateEcheance);
+        if (!d || getStatus(t)==='done') return false;
+        return Math.ceil((d-today)/86400000) <= horizon;
+    }).map(t => ({ t, d:gristToDate(t.dateEcheance), days:Math.ceil((gristToDate(t.dateEcheance)-today)/86400000) }))
+      .sort((a,b)=>a.d-b.d).slice(0,8);
+    if (!upcoming.length) return '<div class="empty-state"><div class="empty-icon">◷</div><div class="empty-text">Aucune échéance proche</div></div>';
+    return `<div class="upcoming-list">${upcoming.map(({t,d,days}) => {
+        const p=getPriority(t);
+        const proj=projects.find(x=>x.id===t.projet);
+        const dc=days<0?'late':days===0?'today':'';
+        return `<div class="upcoming-item" onclick="selectTask(${t.id})">
+            <div class="upcoming-prio p${p}"></div>
+            <div class="upcoming-date ${dc}"><div class="upcoming-date-day">${d.getDate()}</div><div class="upcoming-date-month">${MONTHS_SHORT[d.getMonth()]}</div></div>
+            <div class="upcoming-info">
+                <div class="upcoming-title">${escapeHtml(t.titre)}</div>
+                <div class="upcoming-meta">
+                    ${proj?`<span style="color:${proj.couleur||'#6366f1'}">● ${escapeHtml(proj.nom)}</span>`:''}
+                    <span class="${days<0?'text-danger':''}">${days<0?Math.abs(days)+'j retard':days===0?"Aujourd'hui":'Dans '+days+'j'}</span>
+                </div>
+            </div>
+        </div>`;
+    }).join('')}</div>`;
+}
+
+function renderProjects(comp, ft) {
+    const active = projects.filter(p=>p.actif!==false);
+    if (!active.length) return '<div class="empty-state"><div class="empty-icon">◧</div><div class="empty-text">Aucun projet actif</div></div>';
+    const stats = {};
+    ft.forEach(t => {
+        if (!t.projet) return;
+        if (!stats[t.projet]) stats[t.projet]={ total:0, done:0, prog:0 };
+        stats[t.projet].total++;
+        if (getStatus(t)==='done') stats[t.projet].done++;
+        stats[t.projet].prog += (t.progression||0);
+    });
+    return `<div class="projects-list">${active.filter(p=>stats[p.id]).map(p => {
+        const s=stats[p.id]||{total:0,done:0};
+        const pct=s.total>0?Math.round(s.done/s.total*100):0;
+        return `<div class="project-item">
+            <div class="project-color" style="background:${p.couleur||'#6366f1'}"></div>
+            <div class="project-info"><div class="project-name">${escapeHtml(p.nom)}</div><div class="project-stats">${s.done}/${s.total} terminées</div></div>
+            <div class="project-progress">
+                <div class="project-progress-bar"><div class="project-progress-fill" style="width:${pct}%"></div></div>
+                <div class="project-progress-text">${pct}%</div>
+            </div>
+        </div>`;
+    }).join('')}</div>`;
+}
+
+function renderList(comp, ft) {
+    const preset = comp.config.preset||'all';
+    const limit  = parseInt(comp.config.limit)||10;
+    const today  = new Date(); today.setHours(0,0,0,0);
+    let list = ft;
+    if (preset==='overdue')   list = ft.filter(t=>{const d=gristToDate(t.dateEcheance);return d&&d<today&&getStatus(t)!=='done';});
+    else if (preset==='today')     list = ft.filter(t=>{const d=gristToDate(t.dateEcheance);return d&&isSameDay(d,today);});
+    else if (preset==='upcoming')  list = ft.filter(t=>{const d=gristToDate(t.dateEcheance);const diff=d&&Math.ceil((d-today)/86400000);return diff!==null&&diff>=0&&diff<=14&&getStatus(t)!=='done';});
+    else if (preset==='inprogress')list = ft.filter(t=>getStatus(t)==='inprogress');
+    if (!list.length) return '<div class="empty-state"><div class="empty-text">Aucune tâche</div></div>';
+    return `<div class="list-items">${list.slice(0,limit).map(t=>{
+        const p=getPriority(t), s=getStatus(t);
+        const d=gristToDate(t.dateEcheance);
+        const proj=projects.find(x=>x.id===t.projet);
+        const isLate=d&&d<today&&s!=='done';
+        return `<div class="list-item" onclick="selectTask(${t.id})">
+            <div class="list-prio p${p}"></div>
+            <div class="list-info">
+                <div class="list-title">${escapeHtml(t.titre||'')}</div>
+                <div class="list-meta">
+                    ${proj?`<span style="color:${proj.couleur||'#6366f1'}">● ${escapeHtml(proj.nom)}</span>`:''}
+                    ${d?`<span class="${isLate?'text-danger':''}">${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}</span>`:''}
+                    <span class="status-badge s-${s}">${STATUS_LABELS[s]||s}</span>
+                </div>
+            </div>
+        </div>`;
+    }).join('')}</div>`;
+}
+
+function renderVelocity(comp, ft) {
+    const weeks = parseInt(comp.config.weeks)||6;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const buckets = [];
+    for (let w=weeks-1; w>=0; w--) {
+        const start = startOfWeek(addDays(today, -w*7));
+        const end   = addDays(start, 7);
+        const count = ft.filter(t => {
+            if (getStatus(t)!=='done') return false;
+            const d=gristToDate(t.dateEcheance);
+            return d && d>=start && d<end;
+        }).length;
+        buckets.push({ label:'S'+getWeekNumber(start), count });
+    }
+    const maxC = Math.max(...buckets.map(b=>b.count), 1);
+    const bw=34, gap=8, ch=100, sw=buckets.length*(bw+gap);
+    let bars='';
+    buckets.forEach((b,i)=>{
+        const h=Math.max(4,Math.round(b.count/maxC*ch));
+        const x=i*(bw+gap);
+        bars+=`<rect x="${x}" y="${ch-h}" width="${bw}" height="${h}" rx="3" fill="var(--primary)" opacity="${.45+.55*(b.count/maxC)}"/>
+        <text x="${x+bw/2}" y="${ch+13}" text-anchor="middle" font-size="9" fill="#64748b">${b.label}</text>
+        ${b.count?`<text x="${x+bw/2}" y="${ch-h-4}" text-anchor="middle" font-size="9" fill="#1e293b" font-weight="600">${b.count}</text>`:''}`;
+    });
+    return `<div class="velocity-wrap"><svg width="${Math.max(sw,200)}" height="${ch+18}" style="overflow:visible">${bars}</svg></div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RENDER MAIN
+// ═══════════════════════════════════════════════════════════════════════════════
+function render() {
+    renderGrid();
+    renderFilterChips();
+    if (filterPanelOpen) renderFilterPanel();
+    document.getElementById('lastUpdate').textContent = 'Mis à jour: ' + new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONFIG PERSISTENCE
+// ═══════════════════════════════════════════════════════════════════════════════
+function saveConfig() {
+    if (gristReady) grist.widgetApi?.setOptions({ dash: dashConfig, filters });
+}
+
+function loadConfig(opts) {
+    if (opts?.dash?.layout?.length) {
+        dashConfig = opts.dash;
+        // Ensure all components have config object
+        dashConfig.layout.forEach(c => { if (!c.config) c.config = {}; });
+    }
+    if (opts?.filters) filters = { ...filters, ...opts.filters };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXPORT
+// ═══════════════════════════════════════════════════════════════════════════════
+function exportPrint() {
+    document.getElementById('exportMenu').classList.remove('open');
+    setTimeout(() => window.print(), 100);
+}
+
+async function exportPNG() {
+    document.getElementById('exportMenu').classList.remove('open');
+    if (!window.html2canvas) {
+        const s=document.createElement('script');
+        s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+        document.head.appendChild(s);
+        await new Promise(r=>s.onload=r);
+    }
+    try {
+        const el=document.getElementById('dashboardGrid');
+        const canvas=await html2canvas(el,{backgroundColor:'#f8fafc',scale:2,logging:false});
+        const a=document.createElement('a');
+        a.download='dashboard-'+new Date().toISOString().split('T')[0]+'.png';
+        a.href=canvas.toDataURL('image/png');
+        a.click();
+    } catch(e) { console.error(e); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GRIST INTEGRATION
+// ═══════════════════════════════════════════════════════════════════════════════
+const convert = data => {
+    if (!data || Array.isArray(data)) return data||[];
+    const cols=Object.keys(data); if (!cols.length) return [];
+    const n=data[cols[0]]?.length||0, r=[];
+    for (let i=0;i<n;i++){const rec={};cols.forEach(c=>rec[c]=data[c][i]);r.push(rec);}
+    return r;
+};
+
+async function loadAllData() {
+    if (!gristReady) return;
+    try {
+        const [td,pd,md]=await Promise.all([
+            grist.docApi.fetchTable('Tasks'),
+            grist.docApi.fetchTable('Projects'),
+            grist.docApi.fetchTable('Team'),
+        ]);
+        tasks=convert(td); projects=convert(pd); team=convert(md);
+        render();
+    } catch(e) { console.log('Error loading data:', e); }
+}
+
+function selectTask(id) {
+    if (gristReady && grist.setSelectedRows) grist.setSelectedRows([id]);
+}
+
+document.addEventListener('click', e => {
+    if (!document.getElementById('exportDropdown')?.contains(e.target))
+        document.getElementById('exportMenu')?.classList.remove('open');
+});
+
+async function init() {
+    try {
+        await grist.ready({ requiredAccess: 'full' });
+        gristReady = true;
+        const opts = await grist.widgetApi.getOptions();
+        loadConfig(opts);
+        await loadAllData();
+        grist.onOptions(opts => { loadConfig(opts); render(); });
+        grist.onRecords(async () => await loadAllData());
+    } catch(e) {
+        console.log('Demo mode');
+        useDemoMode();
+    }
+}
+
+function useDemoMode() {
+    document.body.insertAdjacentHTML('beforeend','<div class="demo-badge">Démo</div>');
+    team = [
+        { id:1, nom:'Alice Martin',   actif:true, couleur:'#4f46e5' },
+        { id:2, nom:'Bob Durant',     actif:true, couleur:'#10b981' },
+        { id:3, nom:'Claire Bernard', actif:true, couleur:'#f59e0b' },
+    ];
+    projects = [
+        { id:1, nom:'Refonte Portail', couleur:'#4f46e5', actif:true },
+        { id:2, nom:'App Mobile',      couleur:'#10b981', actif:true },
+        { id:3, nom:'API v2',          couleur:'#f59e0b', actif:true },
+    ];
+    const today=new Date();
+    const day=d=>Math.floor(new Date(today.getFullYear(),today.getMonth(),today.getDate()+d).getTime()/1000);
+    tasks = [
+        {id:1,titre:'Analyse besoins',  priorite:'1',projet:1,dateDebut:day(-10),dateEcheance:day(-5), progression:100,statut:'done',      type:'tache',   assignees:['L',1]},
+        {id:2,titre:'Dev Backend',      priorite:'1',projet:1,dateDebut:day(-4), dateEcheance:day(2),  progression:60, statut:'inprogress',type:'tache',   assignees:['L',1,2]},
+        {id:3,titre:'Design UI',        priorite:'2',projet:2,dateDebut:day(-5), dateEcheance:day(1),  progression:80, statut:'review',    type:'tache',   assignees:['L',3]},
+        {id:4,titre:'Livraison MVP',    priorite:'1',projet:1,dateDebut:day(15), dateEcheance:day(15), progression:0,  statut:'todo',      type:'jalon',   assignees:['L',1]},
+        {id:5,titre:'Tests QA',         priorite:'3',projet:2,dateDebut:day(5),  dateEcheance:day(12), progression:0,  statut:'todo',      type:'tache',   assignees:['L',2]},
+        {id:6,titre:'Documentation',    priorite:'4',projet:3,dateDebut:day(-2), dateEcheance:day(-1), progression:20, statut:'inprogress',type:'tache',   assignees:['L',3]},
+        {id:7,titre:'Correction bugs',  priorite:'2',projet:1,dateDebut:day(0),  dateEcheance:day(3),  progression:10, statut:'inprogress',type:'tache',   assignees:['L',2]},
+        {id:8,titre:'Réunion client',   priorite:'2',projet:2,dateDebut:day(7),  dateEcheance:day(7),  progression:0,  statut:'todo',      type:'reunion', assignees:['L',1,3]},
+        {id:9,titre:'Migration DB',     priorite:'1',projet:3,dateDebut:day(-3), dateEcheance:day(0),  progression:90, statut:'review',    type:'tache',   assignees:['L',1]},
+        {id:10,titre:'Formation équipe',priorite:'3',projet:1,dateDebut:day(10), dateEcheance:day(14), progression:0,  statut:'todo',      type:'reunion', assignees:['L',2,3]},
+        {id:11,titre:'Démo v1',         priorite:'2',projet:2,dateDebut:day(-14),dateEcheance:day(-7), progression:100,statut:'done',      type:'reunion', assignees:['L',1,2,3]},
+        {id:12,titre:'Perf frontend',   priorite:'3',projet:2,dateDebut:day(-7), dateEcheance:day(-3), progression:100,statut:'done',      type:'tache',   assignees:['L',3]},
+    ];
+    render();
+}
+
+init();
+</script>
 </body>
 </html>
