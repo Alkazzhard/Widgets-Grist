@@ -205,6 +205,18 @@
         .cfg-filter-row { display: flex; gap: 5px; }
         .cfg-filter-row .cfg-input { flex: 1; }
 
+        /* ── Accordion (edit panel) ── */
+        .accordion { display: flex; flex-direction: column; }
+        .accordion-item { border-bottom: 1px solid var(--border); }
+        .accordion-item:last-child { border-bottom: none; }
+        .accordion-header { display: flex; align-items: center; gap: 6px; padding: 8px 10px; cursor: pointer; transition: background 0.1s; user-select: none; }
+        .accordion-header:hover { background: var(--bg); }
+        .accordion-item.open > .accordion-header { background: var(--primary-light); }
+        .accordion-label { flex: 1; font-size: 0.79rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+        .accordion-chevron { font-size: 0.65rem; color: var(--text-muted); transition: transform 0.15s; flex-shrink: 0; }
+        .accordion-item.open .accordion-chevron { transform: rotate(90deg); }
+        .accordion-body { padding: 10px 11px; background: #f5f7ff; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 7px; }
+
         /* ── Catalog ── */
         .catalog-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
         .catalog-item { padding: 10px 7px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; text-align: center; transition: all 0.15s; }
@@ -425,15 +437,11 @@ function hasActiveFilters() {
     return filters.periode!=='all' || filters.projets.length || filters.assignes.length || filters.statuts.length;
 }
 
-function toggleFilterProjet(id) { const s=String(id); filters.projets=filters.projets.includes(s)?filters.projets.filter(x=>x!==s):[...filters.projets,s]; broadcastFilters(); render(); }
-function toggleFilterAssigne(id) { const s=String(id); filters.assignes=filters.assignes.includes(s)?filters.assignes.filter(x=>x!==s):[...filters.assignes,s]; broadcastFilters(); render(); }
-function toggleFilterStatut(v)  { filters.statuts=filters.statuts.includes(v)?filters.statuts.filter(x=>x!==v):[...filters.statuts,v]; broadcastFilters(); render(); }
-function setPeriode(p)           { filters.periode=p; broadcastFilters(); render(); }
-function clearFilters()          { filters={periode:'all',projets:[],assignes:[],statuts:[]}; broadcastFilters(); render(); }
-
-function broadcastFilters() {
-    if (gristReady) grist.widgetApi?.setOptions({ dash: dashConfig, filters });
-}
+function toggleFilterProjet(id) { const s=String(id); filters.projets=filters.projets.includes(s)?filters.projets.filter(x=>x!==s):[...filters.projets,s]; render(); }
+function toggleFilterAssigne(id) { const s=String(id); filters.assignes=filters.assignes.includes(s)?filters.assignes.filter(x=>x!==s):[...filters.assignes,s]; render(); }
+function toggleFilterStatut(v)  { filters.statuts=filters.statuts.includes(v)?filters.statuts.filter(x=>x!==v):[...filters.statuts,v]; render(); }
+function setPeriode(p)           { filters.periode=p; render(); }
+function clearFilters()          { filters={periode:'all',projets:[],assignes:[],statuts:[]}; render(); }
 
 function toggleFilterPanel() {
     filterPanelOpen = !filterPanelOpen;
@@ -585,71 +593,71 @@ function getFilterValueOptions(field) {
 function renderEditPanel() {
     const body = document.getElementById('editPanelBody');
     if (!body) return;
-    let html = '';
 
-    // ── Config du composant sélectionné ──
-    const comp = dashConfig.layout.find(x=>x.id===selectedCompId);
-    if (comp) {
-        const cfgFields = CONFIG_FIELDS[comp.type] || [];
-        const cf = comp.config.compFilter || { field:'', value:'' };
+    // ── Composants actifs — accordéon inline ──
+    const accordionItems = dashConfig.layout.map(c => {
+        const isOpen = c.id === selectedCompId;
+        const cfgFields = CONFIG_FIELDS[c.type] || [];
+        const cf = c.config.compFilter || { field:'', value:'' };
         const valueOpts = getFilterValueOptions(cf.field);
-        html += `<div class="edit-section">
-            <div class="edit-section-hdr">⚙ ${escapeHtml(comp.title)}</div>
+
+        const configBody = isOpen ? `<div class="accordion-body">
+            <div class="cfg-row">
+                <div class="cfg-label">Titre</div>
+                <input class="cfg-input" type="text" value="${escapeHtml(c.title)}" oninput="updateCompTitle('${c.id}',this.value)" />
+            </div>
+            ${cfgFields.map(f => `
+            <div class="cfg-row">
+                <div class="cfg-label">${f.label}</div>
+                <select class="cfg-input" onchange="updateCompConfig('${c.id}','${f.key}',this.value,event)">
+                    ${f.options.map(([v,l]) => `<option value="${v}" ${String(c.config[f.key])===String(v)?'selected':''}>${l}</option>`).join('')}
+                </select>
+            </div>`).join('')}
+            <div class="cfg-row">
+                <div class="cfg-label">Filtre composant</div>
+                <select class="cfg-input" onchange="updateCompFilterField('${c.id}',this.value,event)">
+                    ${FILTER_FIELDS.map(([v,l]) => `<option value="${v}" ${cf.field===v?'selected':''}>${l}</option>`).join('')}
+                </select>
+                ${cf.field ? `<select class="cfg-input" style="margin-top:4px" onchange="updateCompFilterValue('${c.id}',this.value,event)">
+                    ${valueOpts.map(([v,l]) => `<option value="${v}" ${String(cf.value)===String(v)?'selected':''}>${l}</option>`).join('')}
+                </select>` : ''}
+            </div>
+        </div>` : '';
+
+        return `<div class="accordion-item ${isOpen ? 'open' : ''}">
+            <div class="accordion-header" onclick="selectComponent('${c.id}',event)">
+                <span class="accordion-chevron">▶</span>
+                <span class="accordion-label">${escapeHtml(c.title)}</span>
+                <div class="edit-controls" onclick="event.stopPropagation()">
+                    <div class="span-btns">${[1,2,3,4].map(n=>`<button class="span-btn ${c.colSpan===n?'active':''}" onclick="setSpan('${c.id}',${n},event)">${n}</button>`).join('')}</div>
+                    <button class="btn-icon danger" onclick="removeComponent('${c.id}',event)" title="Supprimer">×</button>
+                </div>
+            </div>
+            ${configBody}
+        </div>`;
+    }).join('');
+
+    // ── Catalogue ──
+    const CATALOG_LABELS = {
+        kpi:'KPI', donut:'Donut', bars:'Barres', list:'Liste',
+        workload:'Équipe', upcoming:'Échéances', projects:'Projets', velocity:'Vélocité'
+    };
+    const catalogItems = Object.keys(CATALOG).map(type => `
+        <div class="catalog-item" onclick="addComponent('${type}')">
+            <div class="catalog-label" style="font-size:0.79rem;font-weight:600">${CATALOG_LABELS[type]}</div>
+        </div>`).join('');
+
+    body.innerHTML = `
+        <div class="edit-section">
+            <div class="edit-section-hdr">Composants actifs</div>
+            <div class="accordion">${accordionItems}</div>
+        </div>
+        <div class="edit-section">
+            <div class="edit-section-hdr">+ Ajouter</div>
             <div class="edit-section-body">
-                <div class="cfg-row">
-                    <div class="cfg-label">Titre</div>
-                    <input class="cfg-input" type="text" value="${escapeHtml(comp.title)}" oninput="updateCompTitle('${comp.id}',this.value)" />
-                </div>
-                ${cfgFields.map(f => `
-                    <div class="cfg-row">
-                        <div class="cfg-label">${f.label}</div>
-                        <select class="cfg-input" onchange="updateCompConfig('${comp.id}','${f.key}',this.value,event)">
-                            ${f.options.map(([v,l]) => `<option value="${v}" ${String(comp.config[f.key])===String(v)?'selected':''}>${l}</option>`).join('')}
-                        </select>
-                    </div>`).join('')}
-                <div class="cfg-row">
-                    <div class="cfg-label">Filtre composant</div>
-                    <div class="cfg-filter-row">
-                        <select class="cfg-input" onchange="updateCompFilterField('${comp.id}',this.value,event)">
-                            ${FILTER_FIELDS.map(([v,l]) => `<option value="${v}" ${cf.field===v?'selected':''}>${l}</option>`).join('')}
-                        </select>
-                        ${cf.field ? `<select class="cfg-input" onchange="updateCompFilterValue('${comp.id}',this.value,event)">
-                            ${valueOpts.map(([v,l]) => `<option value="${v}" ${String(cf.value)===String(v)?'selected':''}>${l}</option>`).join('')}
-                        </select>` : ''}
-                    </div>
-                </div>
+                <div class="catalog-grid">${catalogItems}</div>
             </div>
         </div>`;
-    }
-
-    // ── Composants actifs ──
-    html += `<div class="edit-section">
-        <div class="edit-section-hdr">Composants actifs</div>
-        <div class="edit-section-body" style="gap:5px">
-            ${dashConfig.layout.map(c => `
-                <div style="display:flex;align-items:center;gap:6px;padding:5px 7px;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:${c.id===selectedCompId?'var(--primary-light)':'white'}" onclick="selectComponent('${c.id}',event)">
-                    <span style="font-size:0.78rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${CATALOG[c.type]?.icon||'?'} ${escapeHtml(c.title)}</span>
-                    <div class="span-btns">${[1,2,3,4].map(n=>`<button class="span-btn ${c.colSpan===n?'active':''}" onclick="setSpan('${c.id}',${n},event)">${n}</button>`).join('')}</div>
-                    <button class="btn-icon danger" onclick="removeComponent('${c.id}',event)">×</button>
-                </div>`).join('')}
-        </div>
-    </div>`;
-
-    // ── Ajouter un composant ──
-    html += `<div class="edit-section">
-        <div class="edit-section-hdr">+ Ajouter un composant</div>
-        <div class="edit-section-body">
-            <div class="catalog-grid">
-                ${Object.entries(CATALOG).map(([type,def]) => `
-                    <div class="catalog-item" onclick="addComponent('${type}')">
-                        <div class="catalog-icon">${def.icon}</div>
-                        <div class="catalog-label">${def.label}</div>
-                    </div>`).join('')}
-            </div>
-        </div>
-    </div>`;
-
-    body.innerHTML = html;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -928,17 +936,22 @@ function render() {
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIG PERSISTENCE
 // ═══════════════════════════════════════════════════════════════════════════════
+let _saving = false;
+
 function saveConfig() {
-    if (gristReady) grist.widgetApi?.setOptions({ dash: dashConfig, filters });
+    if (!gristReady) return;
+    // Seul le layout est persisté — les filtres restent locaux (pas de rechargement)
+    _saving = true;
+    grist.widgetApi?.setOptions({ dash: dashConfig });
+    setTimeout(() => { _saving = false; }, 600);
 }
 
 function loadConfig(opts) {
     if (opts?.dash?.layout?.length) {
         dashConfig = opts.dash;
-        // Ensure all components have config object
         dashConfig.layout.forEach(c => { if (!c.config) c.config = {}; });
     }
-    if (opts?.filters) filters = { ...filters, ...opts.filters };
+    // Filtres intentionnellement non chargés depuis options → locaux uniquement
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1007,7 +1020,7 @@ async function init() {
         const opts = await grist.widgetApi.getOptions();
         loadConfig(opts);
         await loadAllData();
-        grist.onOptions(opts => { loadConfig(opts); render(); });
+        grist.onOptions(opts => { if (_saving) return; loadConfig(opts); render(); });
         grist.onRecords(async () => await loadAllData());
     } catch(e) {
         console.log('Demo mode');
