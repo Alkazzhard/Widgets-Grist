@@ -31,7 +31,7 @@
         body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; }
 
         /* Header */
-        .header { background: var(--card-bg); border-bottom: 1px solid var(--border); padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-shrink: 0; }
+        .header { background: var(--card-bg); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-shrink: 0; }
         .header h1 { font-size: 1.25rem; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
         .header-center { display: flex; align-items: center; gap: 8px; }
         .header-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -333,7 +333,7 @@
 </head>
 <body>
     <div class="header">
-        <h1><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg> Kanban</h1>
+        <h1><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="12" rx="1"/><rect x="17" y="3" width="5" height="15" rx="1"/></svg> Kanban</h1>
         <div class="header-center">
             <span style="font-size:0.8rem;color:var(--text-muted)">Grouper par :</span>
             <div class="group-selector">
@@ -944,8 +944,8 @@
         function removeDependency(id) { const data = panelState.editData; const idx = data.dependDe.indexOf(id); if (idx !== -1) { data.dependDe.splice(idx, 1); syncLocalTask(); if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); } }
         function handleTagKeydown(e) { const data = panelState.editData; if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); const tag = e.target.value.trim().replace(/^#/, ''); if (tag && !data.tags.includes(tag)) { data.tags.push(tag); e.target.value = ''; syncLocalTask(); if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); } } else if (e.key === 'Backspace' && !e.target.value && data.tags.length) { data.tags.pop(); syncLocalTask(); if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); } }
         function removeTag(tag) { const data = panelState.editData; const idx = data.tags.indexOf(tag); if (idx !== -1) { data.tags.splice(idx, 1); syncLocalTask(); if (!panelState.isNew && gristReady) saveTaskToGrist(); renderPanelTask(); } }
-        function showDeleteConfirm() { document.getElementById('deleteConfirm').classList.add('visible'); }
-        function hideDeleteConfirm() { document.getElementById('deleteConfirm').classList.remove('visible'); }
+        function showDeleteConfirm() { const el = document.getElementById('deleteConfirm'); if (el) el.style.display = 'block'; }
+        function hideDeleteConfirm() { const el = document.getElementById('deleteConfirm'); if (el) el.style.display = 'none'; }
 
         // A15: Mise à jour couleur membre dans la table Team
         async function setMemberColor(memberId, color) {
