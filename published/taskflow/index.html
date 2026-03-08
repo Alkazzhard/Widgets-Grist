@@ -51,29 +51,58 @@ body { display: flex; flex-direction: column; background: var(--bg); }
   margin-bottom: -1px;
 }
 .tab:hover { color: var(--text); }
-.tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+.tab.active { display: none; }
 .tab svg { flex-shrink: 0; }
 
 /* ── Loading bar ── */
 .load-bar {
   position: fixed;
-  top: 48px;
+  top: 44px;
   left: 0;
   height: 2px;
   width: 0;
   background: var(--primary);
-  z-index: 100;
-  transition: width .1s;
+  z-index: 200;
   opacity: 0;
 }
 .load-bar.loading {
-  animation: loading-pulse 1.2s ease-in-out infinite;
+  animation: loading-pulse 1.4s ease-in-out infinite;
 }
 @keyframes loading-pulse {
-  0%   { width: 0; opacity: 1; }
-  70%  { width: 80%; opacity: 1; }
+  0%   { width: 0;   opacity: 1; }
+  70%  { width: 85%; opacity: 1; }
   100% { width: 100%; opacity: 0; }
 }
+
+/* ── Skeleton overlay ── */
+#skeleton {
+  position: absolute;
+  inset: 44px 0 0 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  z-index: 10;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s;
+}
+#skeleton.visible { opacity: 1; pointer-events: auto; }
+.sk-spinner {
+  width: 28px; height: 28px;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+.sk-label {
+  font-size: .75rem;
+  color: var(--text-muted);
+  font-family: inherit;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Widget frame ── */
 #frame {
@@ -82,12 +111,16 @@ body { display: flex; flex-direction: column; background: var(--bg); }
   width: 100%;
   display: block;
   background: var(--bg);
+  opacity: 0;
+  transition: opacity .18s ease;
 }
+#frame.visible { opacity: 1; }
 </style>
 </head>
 <body>
 
 <div class="load-bar" id="loadBar"></div>
+<div id="skeleton"><div class="sk-spinner"></div><span class="sk-label" id="skLabel"></span></div>
 
 <nav class="navbar">
   <button class="tab" data-id="dashboard"  onclick="go('dashboard')" >
@@ -118,16 +151,19 @@ body { display: flex; flex-direction: column; background: var(--bg); }
 const BASE = 'https://nic01asfr.github.io/Widgets-Grist/taskflow/';
 
 const URLS = {
-  dashboard:  BASE + 'dashboard/',
-  kanban:     BASE + 'kanban/',
-  gantt:      BASE + 'gantt/',
-  calendar:   BASE + 'calendar/',
-  whiteboard: BASE + 'whiteboard/',
+  dashboard:  BASE + 'dashboard/?shell=1',
+  kanban:     BASE + 'kanban/?shell=1',
+  gantt:      BASE + 'gantt/?shell=1',
+  calendar:   BASE + 'calendar/?shell=1',
+  whiteboard: BASE + 'whiteboard/?shell=1',
 };
 
-const frame   = document.getElementById('frame');
-const loadBar = document.getElementById('loadBar');
-let current   = null;
+const frame    = document.getElementById('frame');
+const loadBar  = document.getElementById('loadBar');
+const skeleton = document.getElementById('skeleton');
+const skLabel  = document.getElementById('skLabel');
+const LABELS   = { dashboard:'Dashboard', kanban:'Kanban', gantt:'Gantt', calendar:'Calendar', whiteboard:'Whiteboard' };
+let current    = null;
 
 // ── Transparent Grist relay ───────────────────────────────────────
 // The widgets inside the iframe need to talk to Grist (our parent).
@@ -154,11 +190,18 @@ function go(id) {
     t.classList.toggle('active', t.dataset.id === id)
   );
 
-  // Loading indicator
+  // Masquer l'iframe immédiatement, afficher le skeleton
+  frame.classList.remove('visible');
+  skLabel.textContent = 'Chargement ' + LABELS[id] + '…';
+  skeleton.classList.add('visible');
   loadBar.classList.add('loading');
-  frame.onload = () => loadBar.classList.remove('loading');
 
-  // Load widget directly by URL — widgets initialize normally with Grist
+  frame.onload = () => {
+    loadBar.classList.remove('loading');
+    skeleton.classList.remove('visible');
+    frame.classList.add('visible');
+  };
+
   frame.src = URLS[id];
 }
 
