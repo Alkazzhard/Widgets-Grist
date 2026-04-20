@@ -756,7 +756,13 @@
         // ═══════════════════════════════════════════════════════════════════════
         // SORTING & FILTERING
         // ═══════════════════════════════════════════════════════════════════════
-        function changeSortMode(mode) { sortMode = mode; localStorage.setItem('taskflow_gantt_sort', mode); sortTasks(); render(); }
+        function changeSortMode(mode) {
+            sortMode = mode;
+            localStorage.setItem('taskflow_gantt_sort', mode);
+            // Persistance robuste via Grist (localStorage peut être partitionné dans l'iframe)
+            try { if (typeof grist !== 'undefined' && grist.setOption) grist.setOption('ganttSort', mode); } catch (e) {}
+            sortTasks(); render();
+        }
         function sortTasks() {
             if (sortMode === 'priority') tasks.sort((a, b) => { const pa = getTaskPriority(a), pb = getTaskPriority(b); return pa !== pb ? pa - pb : (a.dateDebut || 0) - (b.dateDebut || 0); });
             else if (sortMode === 'date') tasks.sort((a, b) => (a.dateDebut || 0) - (b.dateDebut || 0));
@@ -1962,7 +1968,7 @@
                         render();
                     }
                 });
-                // GEN-02: Synchronisation des filtres inter-widgets
+                // GEN-02: Synchronisation des filtres inter-widgets + persistance sortMode
                 grist.onOptions((options, interaction) => {
                     if (options?.filters && interaction?.source !== 'self') {
                         const f = options.filters;
@@ -1971,6 +1977,13 @@
                         filters.assignee = Array.isArray(f.assignee) ? f.assignee : [];
                         updateFilterMenus();
                         render();
+                    }
+                    // Restauration du tri persisté côté Grist (source de vérité)
+                    if (options?.ganttSort && ['priority', 'date', 'manual'].includes(options.ganttSort) && options.ganttSort !== sortMode) {
+                        sortMode = options.ganttSort;
+                        localStorage.setItem('taskflow_gantt_sort', sortMode);
+                        const s = document.getElementById('sortSelect'); if (s) s.value = sortMode;
+                        sortTasks(); render();
                     }
                 });
             } catch (e) {
