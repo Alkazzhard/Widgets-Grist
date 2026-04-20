@@ -2056,6 +2056,8 @@
         document.documentElement.style.setProperty('--cell-width', VIEW_CONFIG[currentView].cellWidth + 'px');
         // Initialiser le bouton vue actif depuis localStorage
         document.querySelectorAll('.view-controls .btn').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
+        // Synchroniser le <select> de tri avec sortMode restauré depuis localStorage
+        { const s = document.getElementById('sortSelect'); if (s) s.value = sortMode; }
         // Relancer le rendu quand le widget est redimensionné (ex: panel ouvert/fermé, fenêtre)
         new ResizeObserver(() => render()).observe(document.getElementById('timelineScroll'));
         initGrist();
