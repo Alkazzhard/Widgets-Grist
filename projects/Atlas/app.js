@@ -1105,6 +1105,7 @@ function renderLayersPanel(mode) {
                         <div class="layer-name">${l.name}</div>
                         <div class="layer-meta"><span>${l.geojson?.features?.length || 0} obj.</span>${is3D ? '<span class="badge3d">3D</span>' : ''}${l.gristId ? '<span class="badge-saved">Grist</span>' : ''}</div>
                     </div>
+                    <button class="layer-act" onclick="A.zoomLayer('${l.id}', event)" title="Zoomer sur la couche">🎯</button>
                     <button class="layer-del" onclick="A.deleteLayer('${l.id}', event)" title="Supprimer">🗑️</button>
                 </div>`;
             }).join('')}
@@ -1950,6 +1951,14 @@ const A = {
     },
     toggleLayer(id, e) { e.stopPropagation(); const l = STATE.layers.find((x) => x.id === id); if (!l) return; setLayerVisibility(l, l.visible === false); renderLayersPanel(STATE.currentModule); updateLegend(); },
     toggleAllLayers(v) { STATE.layers.forEach((l) => setLayerVisibility(l, v)); renderLayersPanel(STATE.currentModule); updateLegend(); },
+    zoomLayer(id, e) {
+        if (e) e.stopPropagation();
+        const l = STATE.layers.find((x) => x.id === id);
+        if (!l?.geojson?.features?.length) { showToast('Couche vide', 'warning'); return; }
+        if (l.visible === false) setLayerVisibility(l, true);
+        fitToLayer(l);
+        showToast(`Zoom sur « ${l.name} »`, 'info');
+    },
     deleteLayer(id, e) {
         e.stopPropagation();
         const l = STATE.layers.find((x) => x.id === id); if (!l) return;
