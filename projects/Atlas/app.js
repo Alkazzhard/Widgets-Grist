@@ -1059,7 +1059,7 @@ function setLayerVisibility(layer, visible) {
 // ============================================================
 // MODULES — chrome contextuel
 // ============================================================
-const MODULE_TITLES = { lieu: '📍 Lieu', couches: 'Couches', symbo: 'Symboliser', soleil: '☀️ Soleil', vues: 'Vue & rendu', reglages: '⚙️ Catalogue 3D' };
+const MODULE_TITLES = { lieu: '📍 Lieu', couches: 'Couches', soleil: '☀️ Soleil', vues: 'Vue & rendu', reglages: '⚙️ Catalogue 3D' };
 
 function openModule(name) {
     STATE.currentModule = name;
@@ -1069,7 +1069,7 @@ function openModule(name) {
     $('module-foot').style.display = 'none';
 
     if (name === 'lieu') renderLieu();
-    else if (name === 'couches' || name === 'symbo') renderLayersPanel(name);
+    else if (name === 'couches') renderLayersPanel(name);
     else if (name === 'reglages') renderModelsPanel();
     else if (name === 'soleil') renderSoleil();
     else if (name === 'vues') renderVues();
@@ -1127,9 +1127,9 @@ function renderLieu() {
         </div>`;
 }
 
-// ---- Couches / Symboliser ----
+// ---- Couches (liste + symbolisation via l'inspecteur de droite) ----
 function renderLayersPanel(mode) {
-    $('module-title').textContent = mode === 'symbo' ? 'Symboliser' : 'Couches';
+    $('module-title').textContent = 'Couches';
     const body = $('module-body');
     if (STATE.layers.length === 0) {
         body.innerHTML = `
@@ -1311,7 +1311,7 @@ function updateLegend() {
 function renderInspector() {
     const insp = $('inspector');
     if (STATE.selection.mode && STATE.selection.features.length > 0) { renderObjectInspector(); insp.classList.add('open'); return; }
-    if ((STATE.currentModule === 'symbo' || STATE.currentModule === 'couches') && STATE.selectedLayer) {
+    if (STATE.currentModule === 'couches' && STATE.selectedLayer) {
         const layer = STATE.layers.find((l) => l.id === STATE.selectedLayer);
         if (layer) { renderSymbologyInspector(layer); insp.classList.add('open'); return; }
     }
@@ -1767,7 +1767,7 @@ function finalizeNewLayer(layer) {
     updateRailBadge();
     fitToLayer(layer);
     markDirty();
-    if (STATE.currentModule === 'couches' || STATE.currentModule === 'symbo') renderLayersPanel(STATE.currentModule);
+    if (STATE.currentModule === 'couches') renderLayersPanel(STATE.currentModule);
     else openModule('couches');
     saveLayerToGrist(layer, true);
 }
@@ -1939,7 +1939,6 @@ function buildCmdItems(q) {
     const base = [
         { label: 'Lieu', kind: 'module', run: () => openModule('lieu'), ic: '📍' },
         { label: 'Couches', kind: 'module', run: () => openModule('couches'), ic: '🗂️' },
-        { label: 'Symboliser', kind: 'module', run: () => openModule('symbo'), ic: '🎨' },
         { label: 'Catalogue 3D / Réglages', kind: 'module', run: () => openModule('reglages'), ic: '⚙️' },
         { label: 'Soleil', kind: 'module', run: () => openModule('soleil'), ic: '☀️' },
         { label: 'Vue & rendu', kind: 'module', run: () => openModule('vues'), ic: '🎯' },
@@ -2023,8 +2022,8 @@ const A = {
         STATE.selectedLayer = id;
         const layer = STATE.layers.find((l) => l.id === id);
         if (layer) layer._modelCat = layer._modelCat || 'furniture';
-        if (STATE.currentModule !== 'symbo') openModule('symbo');
-        else { renderLayersPanel(STATE.currentModule); renderInspector(); }
+        if (STATE.currentModule !== 'couches') openModule('couches');
+        else { renderLayersPanel('couches'); renderInspector(); }
     },
     toggleLayer(id, e) { e.stopPropagation(); const l = STATE.layers.find((x) => x.id === id); if (!l) return; setLayerVisibility(l, l.visible === false); renderLayersPanel(STATE.currentModule); updateLegend(); },
     toggleAllLayers(v) { STATE.layers.forEach((l) => setLayerVisibility(l, v)); renderLayersPanel(STATE.currentModule); updateLegend(); },
@@ -2063,7 +2062,7 @@ const A = {
         }
         applyPointStyle(l); Models3D.forceBuild(); renderInspector(); markDirty();
     },
-    openLayerModel(id) { STATE.selectedLayer = id; inspSymTab = 'Modèle 3D'; openModule('symbo'); },
+    openLayerModel(id) { STATE.selectedLayer = id; inspSymTab = 'Modèle 3D'; openModule('couches'); },
     editLayerObjects(id) {
         const l = STATE.layers.find((x) => x.id === id); if (!l) return;
         enterSelectionMode(id);
