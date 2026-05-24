@@ -16,10 +16,30 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // ============================================================
 // CONFIG / STATE
 // ============================================================
+// Fonds : OpenFreeMap (vecteur, bâtiments 3D) + IGN Géoplateforme (raster FR)
+const IGN = {
+    plan:  'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}',
+    ortho: 'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}',
+    // MNT LIDAR HD (GeoTIFF Float32) — décodé en TerrainRGB via le protocole ignmnt://
+    mnt:   'ignmnt://data.geopf.fr/wms-r?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=IGNF_LIDAR-HD_MNT_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93&STYLES=&FORMAT=image/geotiff&CRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=512&HEIGHT=512',
+};
+function ignRasterStyle(tiles) {
+    return { version: 8, glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+        sources: { 'ign': { type: 'raster', tiles: [tiles], tileSize: 256, attribution: '© IGN / Géoplateforme' } },
+        layers: [{ id: 'ign-base', type: 'raster', source: 'ign' }] };
+}
 const BASEMAPS = {
     liberty:  { url: 'https://tiles.openfreemap.org/styles/liberty',  label: 'Liberty 3D', icon: '✨' },
     bright:   { url: 'https://tiles.openfreemap.org/styles/bright',   label: 'Plan',       icon: '🗺️' },
     positron: { url: 'https://tiles.openfreemap.org/styles/positron', label: 'Clair',      icon: '⬜' },
+    'plan-ign':  { style: () => ignRasterStyle(IGN.plan),  label: 'Plan IGN',  icon: '🇫🇷' },
+    'ortho-ign': { style: () => ignRasterStyle(IGN.ortho), label: 'Ortho IGN', icon: '🛰️' },
+};
+
+// Sources de relief (DEM) : terrarium mondial (sans clé) ou LIDAR HD IGN (France)
+const TERRAIN_SOURCES = {
+    terrarium: { label: 'Mondial (terrarium)', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], encoding: 'terrarium', tileSize: 256, maxzoom: 14, attribution: 'Terrain: Mapzen / AWS' },
+    ign:       { label: 'LIDAR HD IGN (FR)', tiles: [IGN.mnt], encoding: 'mapbox', tileSize: 512, maxzoom: 16, attribution: '© IGN LIDAR HD' },
 };
 
 const CONFIG = {
@@ -41,6 +61,7 @@ const STATE = {
         basemap: 'liberty',
         buildings3D: true,
         terrain3D: false,
+        terrainSource: 'terrarium',
         terrainExaggeration: 1.2,
         labels: true,
         sky: true,
@@ -243,20 +264,133 @@ function initSymbolization(layer) {
 }
 
 // ============================================================
-// MODÈLES 3D — custom layer three.js
+// AMBIANCE — soleil + lune (jour/crépuscule/nuit), inspiré EclExt
 // ============================================================
+function _lerp(a, b, t) { return a + (b - a) * clamp(t, 0, 1); }
+function _lerpHex(c1, c2, t) {
+    t = clamp(t, 0, 1);
+    return '#' + [0, 1, 2].map((i) => Math.round(c1[i] + (c2[i] - c1[i]) * t).toString(16).padStart(2, '0')).join('');
+}
+function computeMoon(date, lat, lng) {
+    if (typeof SunCalc === 'undefined') return null;
+    try {
+        const pos = SunCalc.getMoonPosition(date, lat, lng);
+        const illum = SunCalc.getMoonIllumination(date);
+        const altDeg = pos.altitude * 180 / Math.PI;
+        const azDeg = ((pos.azimuth * 180 / Math.PI) + 180) % 360;
+        let altFactor = altDeg > 0 ? Math.sin(altDeg * Math.PI / 180) * (altDeg < 20 ? altDeg / 20 : 1) : 0;
+        const distFactor = Math.pow(384400 / (pos.distance || 384400), 2);
+        const moonIntensity = Math.min(1, illum.fraction * altFactor * distFactor / 0.4);
+        return { altDeg, azDeg, fraction: illum.fraction, phase: illum.phase, isUp: altDeg > 0, moonIntensity };
+    } catch (e) { return null; }
+}
+// Renvoie les paramètres d'ambiance pour une altitude solaire donnée
+function computeAmbient(altDeg, moon) {
+    const DAY = [255, 255, 255], GOLD = [255, 210, 140], TWIL = [120, 110, 150], NIGHT = [16, 22, 52];
+    let sunColor, sunIntensity, ambientColor, ambientIntensity, mapColor, mapIntensity, sky, horizon;
+    if (altDeg > 8) { sunColor = '#ffffff'; sunIntensity = 2.0; ambientColor = '#f3ecd9'; ambientIntensity = 1.0; mapColor = '#ffffff'; mapIntensity = 0.55; sky = '#aacbe8'; horizon = '#f3ecd9'; }
+    else if (altDeg > 0) { const t = altDeg / 8; sunColor = _lerpHex(GOLD, DAY, t); sunIntensity = _lerp(1.2, 2.0, t); ambientColor = _lerpHex(GOLD, [243, 236, 217], t); ambientIntensity = _lerp(0.8, 1.0, t); mapColor = _lerpHex(GOLD, DAY, t); mapIntensity = _lerp(0.4, 0.55, t); sky = _lerpHex([230, 150, 90], [170, 203, 232], t); horizon = '#f0c89a'; }
+    else if (altDeg > -6) { const t = (altDeg + 6) / 6; sunColor = _lerpHex(TWIL, GOLD, t); sunIntensity = _lerp(0.4, 1.2, t); ambientColor = _lerpHex([60, 60, 95], GOLD, t); ambientIntensity = _lerp(0.45, 0.8, t); mapColor = _lerpHex([90, 90, 130], GOLD, t); mapIntensity = _lerp(0.3, 0.4, t); sky = _lerpHex([60, 55, 90], [230, 150, 90], t); horizon = _lerpHex([70, 60, 95], [240, 200, 154], t); }
+    else { const t = clamp((altDeg + 18) / 12, 0, 1); sunColor = '#1a2030'; sunIntensity = _lerp(0.06, 0.4, t); ambientColor = _lerpHex(NIGHT, [60, 60, 95], t); ambientIntensity = _lerp(0.22, 0.45, t); mapColor = _lerpHex([20, 28, 60], [90, 90, 130], t); mapIntensity = _lerp(0.16, 0.3, t); sky = _lerpHex([8, 11, 28], [60, 55, 90], t); horizon = _lerpHex([14, 18, 42], [70, 60, 95], t); }
+    let hemiIntensity = clamp(0.2 + (altDeg + 6) / 40, 0.12, 0.55);
+    // Apport lunaire la nuit
+    if (moon && altDeg < -2 && moon.isUp && moon.moonIntensity > 0.05) {
+        const mi = moon.moonIntensity;
+        ambientIntensity += mi * 0.22; mapIntensity += mi * 0.12; hemiIntensity += mi * 0.15;
+        ambientColor = _lerpHex([parseInt(ambientColor.slice(1, 3), 16), parseInt(ambientColor.slice(3, 5), 16), parseInt(ambientColor.slice(5, 7), 16)], [120, 140, 190], Math.min(0.5, mi * 0.5));
+    }
+    return { sunColor, sunIntensity, ambientColor, ambientIntensity, hemiIntensity, mapColor, mapIntensity, sky, horizon };
+}
+
+// ============================================================
+// PROTOCOLE ignmnt:// — décodage MNT IGN (GeoTIFF Float32 → TerrainRGB)
+// dans un pool de Web Workers (hors thread principal). Pool créé à la
+// première utilisation (évite le coût si le relief IGN n'est pas activé).
+// ============================================================
+let _ignDemPool = null;
+function ignDemPool() {
+    if (_ignDemPool) return _ignDemPool;
+    const src = `
+        self.importScripts('https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js');
+        self.onmessage = async (e) => {
+            const { id, buffer } = e.data;
+            try {
+                const tiff = await GeoTIFF.fromArrayBuffer(buffer);
+                const image = await tiff.getImage();
+                const rasters = await image.readRasters();
+                const w = image.getWidth(), h = image.getHeight(), elev = rasters[0];
+                const rgba = new Uint8ClampedArray(w*h*4);
+                for (let i=0;i<elev.length;i++){ let v=elev[i]; if(!isFinite(v)||v<-500||v>9000)v=0; const enc=Math.round((v+10000)/0.1); rgba[i*4]=(enc>>16)&255; rgba[i*4+1]=(enc>>8)&255; rgba[i*4+2]=enc&255; rgba[i*4+3]=255; }
+                const c = new OffscreenCanvas(w,h); c.getContext('2d').putImageData(new ImageData(rgba,w,h),0,0);
+                const b = await c.convertToBlob({type:'image/png'}); const out = new Uint8Array(await b.arrayBuffer());
+                self.postMessage({ id, ok:true, data: out }, [out.buffer]);
+            } catch(err) { self.postMessage({ id, ok:false, error: String(err && err.message || err) }); }
+        };`;
+    const url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
+    const N = Math.min(3, navigator.hardwareConcurrency || 2);
+    const workers = []; const pending = new Map(); let seq = 0, rr = 0;
+    for (let i = 0; i < N; i++) {
+        const w = new Worker(url);
+        w.onmessage = (e) => { const p = pending.get(e.data.id); if (!p) return; pending.delete(e.data.id); e.data.ok ? p.resolve(e.data.data) : p.reject(new Error(e.data.error)); };
+        workers.push(w);
+    }
+    _ignDemPool = { decode(buf) { return new Promise((res, rej) => { const id = ++seq; pending.set(id, { resolve: res, reject: rej }); workers[rr++ % N].postMessage({ id, buffer: buf }, [buf]); }); } };
+    return _ignDemPool;
+}
+let _flatDem = null;
+async function flatDemTile() {
+    if (_flatDem) return _flatDem;
+    const size = 256, rgba = new Uint8ClampedArray(size * size * 4), e0 = Math.round(10000 / 0.1);
+    for (let i = 0; i < size * size; i++) { rgba[i * 4] = (e0 >> 16) & 255; rgba[i * 4 + 1] = (e0 >> 8) & 255; rgba[i * 4 + 2] = e0 & 255; rgba[i * 4 + 3] = 255; }
+    const c = new OffscreenCanvas(size, size); c.getContext('2d').putImageData(new ImageData(rgba, size, size), 0, 0);
+    _flatDem = new Uint8Array(await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer());
+    return _flatDem;
+}
+(function registerIGNTerrain() {
+    if (typeof maplibregl === 'undefined' || typeof OffscreenCanvas === 'undefined') return;
+    maplibregl.addProtocol('ignmnt', async (params, abort) => {
+        const url = 'https://' + params.url.replace('ignmnt://', '');
+        try {
+            const r = await fetch(url, { signal: abort.signal, headers: { 'Accept': 'image/tiff, image/geotiff' } });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const buf = await r.arrayBuffer();
+            const hd = new Uint8Array(buf, 0, 4);
+            const isTiff = (hd[0] === 0x49 && hd[1] === 0x49) || (hd[0] === 0x4D && hd[1] === 0x4D);
+            if (!isTiff || buf.byteLength < 100) throw new Error('not tiff');
+            return { data: await ignDemPool().decode(buf) };
+        } catch (e) { if (abort.signal.aborted) throw e; return { data: await flatDemTile() }; }
+    });
+})();
+
+// ============================================================
+// MODÈLES 3D — custom layer three.js, rendu InstancedMesh
+// (moteur inspiré d'EclExt : origine locale, instancing, fast-path
+//  d'édition, culling viewport, placement sur le relief)
+// ============================================================
+const MAX_3D_INSTANCES = 20000;       // plafond élevé grâce à l'instancing
+const MODEL3D_ZOOM_GATE = 13;          // sous ce zoom on cache la 3D si beaucoup d'objets
+const MODEL3D_GATE_COUNT = 400;
+
 const Models3D = {
     layerId: 'three-models-3d',
-    sceneObj: null, camera: null, renderer: null, layer: null,
-    cache: new Map(),       // url -> Promise<THREE.Group>
-    instances: [],          // {object, lng, lat, alt, scale, rx, ry, rz}
-    sunDir: new THREE.Vector3(0.4, 0.4, 1).normalize(),
-    dirLight: null, ambLight: null, _rebuildTimer: null,
+    scene: null, camera: null, renderer: null,
+    gltfCache: new Map(),   // url -> Promise<THREE.Group|null>
+    protoCache: new Map(),  // url -> [{geometry, material, mat}] | null
+    groups: new Map(),      // url -> { meshes:[{im, protoMat}], items:[{layerId, idx, lng, lat}] }
+    slotIndex: new Map(),   // `${layerId}:${idx}` -> { url, slot }
+    origin: null, originMC: null, originScale: 1, originElev: 0,
+    elevCache: new Map(),
+    sunDir: new THREE.Vector3(0.4, 0.7, 0.4).normalize(),
+    dirLight: null, ambLight: null, hemiLight: null,
+    _buildTimer: null, _cullTimer: null, _driftTimer: null, _lastOriginElev: undefined,
+    _m4Origin: new THREE.Matrix4(), _m4VP: new THREE.Matrix4(),
+    _mRotX: new THREE.Matrix4().makeRotationX(Math.PI / 2),
+    _vScale: new THREE.Vector3(), _obj: new THREE.Object3D(), _m4: new THREE.Matrix4(),
 
-    scheduleRebuild() {
-        clearTimeout(this._rebuildTimer);
-        this._rebuildTimer = setTimeout(() => this.rebuildScene(), 45);
-    },
+    scheduleBuild() { clearTimeout(this._buildTimer); this._buildTimer = setTimeout(() => this.build(), 60); },
+    // alias rétro-compat (anciens appels)
+    rebuildScene() { this.build(); },
+    scheduleRebuild() { this.scheduleBuild(); },
 
     makeLayer() {
         const self = this;
@@ -264,112 +398,216 @@ const Models3D = {
             id: self.layerId, type: 'custom', renderingMode: '3d',
             onAdd(m, gl) {
                 self.camera = new THREE.Camera();
-                self.sceneObj = new THREE.Scene();
-                self.ambLight = new THREE.AmbientLight(0xffffff, 1.1);
-                self.dirLight = new THREE.DirectionalLight(0xffffff, 2.2);
+                self.scene = new THREE.Scene();
+                self.ambLight = new THREE.AmbientLight(0xffffff, 1.0);
+                self.dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
                 self.dirLight.position.copy(self.sunDir).multiplyScalar(100);
-                self.sceneObj.add(self.ambLight, self.dirLight);
-                const hemi = new THREE.HemisphereLight(0xffffff, 0x8a7a5a, 0.6);
-                self.sceneObj.add(hemi);
+                self.hemiLight = new THREE.HemisphereLight(0xbcd4e8, 0x55492f, 0.45);
+                self.scene.add(self.ambLight, self.dirLight, self.hemiLight);
                 self.renderer = new THREE.WebGLRenderer({ canvas: m.getCanvas(), context: gl, antialias: true });
                 self.renderer.autoClear = false;
-                self.rebuildScene();
+                self.build();
             },
             render(gl, matrix) {
-                if (!self.renderer) return;
-                // MapLibre v4 passes the mercator matrix as an array; guard for other forms.
-                const m = Array.isArray(matrix) ? matrix
-                    : (matrix && (matrix.defaultProjectionData?.mainMatrix || matrix.mainMatrix));
-                if (!m) return;
+                if (!self.renderer || !self.origin) return;
+                const arr = Array.isArray(matrix) ? matrix : (matrix && (matrix.defaultProjectionData?.mainMatrix || matrix.mainMatrix));
+                if (!arr) return;
+                // élévation de l'origine — peut évoluer pendant le chargement des tuiles DEM
+                const elev = STATE.settings.terrain3D ? (map.queryTerrainElevation(self.origin) || 0) : 0;
+                if (self._lastOriginElev !== undefined && Math.abs(elev - self._lastOriginElev) > 0.5) {
+                    clearTimeout(self._driftTimer);
+                    self._driftTimer = setTimeout(() => self.recomputeAll(), 200);
+                }
+                self._lastOriginElev = elev;
+                const mc = maplibregl.MercatorCoordinate.fromLngLat(self.origin, elev);
+                const s = mc.meterInMercatorCoordinateUnits();
+                self._vScale.set(s, -s, s);
+                self._m4Origin.makeTranslation(mc.x, mc.y, mc.z).scale(self._vScale).multiply(self._mRotX);
                 self.dirLight.position.copy(self.sunDir).multiplyScalar(100);
-                self.camera.projectionMatrix = new THREE.Matrix4().fromArray(m);
+                self._m4VP.fromArray(arr).multiply(self._m4Origin);
+                self.camera.projectionMatrix.copy(self._m4VP);
                 self.renderer.resetState();
-                self.renderer.render(self.sceneObj, self.camera);
+                self.renderer.render(self.scene, self.camera);
             },
+            onRemove() { self.disposeInstances(); self.renderer?.dispose?.(); self.renderer = null; self.scene = null; },
         };
     },
 
-    async ensureModel(url) {
-        if (!this.cache.has(url)) {
+    async ensureGLTF(url) {
+        if (!this.gltfCache.has(url)) {
             const loader = new GLTFLoader();
-            this.cache.set(url, loader.loadAsync(url).then((g) => g.scene).catch((e) => {
-                console.warn('GLTF load failed', url, e.message); return null;
-            }));
+            this.gltfCache.set(url, loader.loadAsync(url).then((g) => g.scene).catch((e) => { console.warn('GLTF load failed', url, e.message); return null; }));
         }
-        return this.cache.get(url);
+        return this.gltfCache.get(url);
     },
-
-    matrixFor(lng, lat, alt, scale, rx, ry, rz) {
-        const mc = maplibregl.MercatorCoordinate.fromLngLat([lng, lat], alt || 0);
-        const s = mc.meterInMercatorCoordinateUnits() * (scale || 1);
-        const m = new THREE.Matrix4().makeTranslation(mc.x, mc.y, mc.z)
-            .scale(new THREE.Vector3(s, -s, s))
-            .multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2 + deg2rad(rx || 0)))
-            .multiply(new THREE.Matrix4().makeRotationY(deg2rad(rz || 0)))   // azimut (yaw)
-            .multiply(new THREE.Matrix4().makeRotationZ(deg2rad(ry || 0)));  // roll
-        return m;
-    },
-
-    rebuildScene() {
-        if (!this.sceneObj) return;
-        // clear previous instance objects
-        this.instances.forEach((i) => this.sceneObj.remove(i.object));
-        this.instances = [];
-
-        const plan = collectModelInstances();
-        if (plan.length === 0) { map && map.triggerRepaint(); return; }
-
-        const urls = [...new Set(plan.map((p) => p.url))];
-        Promise.all(urls.map((u) => this.ensureModel(u))).then((groups) => {
-            const byUrl = {}; urls.forEach((u, i) => (byUrl[u] = groups[i]));
-            plan.forEach((p) => {
-                const base = byUrl[p.url]; if (!base) return;
-                const obj = base.clone(true);
-                obj.matrixAutoUpdate = false;
-                obj.matrix.copy(this.matrixFor(p.lng, p.lat, p.alt, p.scale, p.rx, p.ry, p.rz));
-                this.sceneObj.add(obj);
-                this.instances.push({ object: obj });
-            });
-            map && map.triggerRepaint();
+    // prototypes = liste de sous-mailles {geometry, material, mat(local)} pour l'instancing
+    async ensureProto(url) {
+        if (this.protoCache.has(url)) return this.protoCache.get(url);
+        const scene = await this.ensureGLTF(url);
+        if (!scene) { this.protoCache.set(url, null); return null; }
+        scene.updateMatrixWorld(true);
+        const parts = [];
+        // La matrice d'origine par frame contient une mise à l'échelle Y négative
+        // (mercator) → on force DoubleSide pour éviter le culling des faces avant.
+        const fix = (m) => { const c = m.clone(); c.side = THREE.DoubleSide; return c; };
+        scene.traverse((o) => {
+            if (!o.isMesh || !o.geometry) return;
+            const material = Array.isArray(o.material) ? o.material.map(fix) : fix(o.material);
+            parts.push({ geometry: o.geometry, material, mat: o.matrixWorld.clone() });
         });
+        const v = parts.length ? parts : null;
+        this.protoCache.set(url, v); return v;
     },
 
-    setSun(azimuthDeg, altitudeDeg) {
-        const az = deg2rad(azimuthDeg), al = deg2rad(Math.max(0, altitudeDeg));
-        this.sunDir.set(Math.sin(az) * Math.cos(al), Math.cos(az) * Math.cos(al), Math.sin(al)).normalize();
-        if (this.dirLight) {
-            this.dirLight.intensity = STATE.settings.shadows ? 2.2 : 1.4;
-            this.ambLight.intensity = STATE.settings.shadows ? 0.9 : 1.4;
+    setOrigin(lng, lat) { this.origin = [lng, lat]; this.originMC = maplibregl.MercatorCoordinate.fromLngLat([lng, lat], 0); this.originScale = this.originMC.meterInMercatorCoordinateUnits(); },
+    localMeters(lng, lat) { const mc = maplibregl.MercatorCoordinate.fromLngLat([lng, lat], 0), s = this.originScale; return { x: (mc.x - this.originMC.x) / s, y: -(mc.y - this.originMC.y) / s }; },
+    elevAt(lng, lat) {
+        if (!STATE.settings.terrain3D || !map) return 0;
+        const k = ((lng * 1e4) | 0) + ',' + ((lat * 1e4) | 0);
+        if (this.elevCache.has(k)) return this.elevCache.get(k);
+        const v = map.queryTerrainElevation([lng, lat]) || 0;
+        if (this.elevCache.size > 8000) this.elevCache.clear();
+        this.elevCache.set(k, v); return v;
+    },
+
+    // matrice de placement (espace local mètres, Y up) pour une feature
+    placement(layer, feature) {
+        const p = resolveFeatureProps(feature, layer);
+        const [lng, lat] = feature.geometry.coordinates;
+        const lm = this.localMeters(lng, lat);
+        const eOff = this.elevAt(lng, lat) - this.originElev;
+        const o = this._obj;
+        o.position.set(lm.x + (p.offsetX || 0), eOff + (p.offsetZ || 0), -lm.y - (p.offsetY || 0));
+        const sc = p.scale || 1; o.scale.set(sc, sc, sc);
+        o.rotation.set(deg2rad(p.rotationX || 0), deg2rad(p.rotationZ || 0), deg2rad(p.rotationY || 0), 'YXZ');
+        o.updateMatrix();
+        return o.matrix;
+    },
+
+    // collecte des features 3D dans l'emprise (culling viewport)
+    collect() {
+        const out = [];
+        if (!map) return out;
+        const b = map.getBounds(), buf = 0.004;
+        for (const layer of STATE.layers) {
+            if (layer.visible === false) continue;
+            if (layer.geometryType !== 'Point' && layer.geometryType !== 'MultiPoint') continue;
+            if (layer.style?.mode !== 'library' && layer.style?.mode !== 'custom') continue;
+            const defUrl = getLayerModelUrl(layer);
+            const sym = layer.style.symbolization || {};
+            const categorized = sym.model?.mode === 'categorized' && sym.model.field;
+            if (!defUrl && !categorized) continue;
+            const feats = layer.geojson?.features || [];
+            for (let idx = 0; idx < feats.length; idx++) {
+                const f = feats[idx];
+                if (f.geometry?.type !== 'Point') continue;
+                const [lng, lat] = f.geometry.coordinates;
+                if (lng < b.getWest() - buf || lng > b.getEast() + buf || lat < b.getSouth() - buf || lat > b.getNorth() + buf) continue;
+                let url = defUrl;
+                if (categorized || f.properties?._modelId) { const mm = findModel(resolveFeatureProps(f, layer).modelId); if (mm) url = mm.url; }
+                if (!url) continue;
+                out.push({ layerId: layer.id, idx, lng, lat, url });
+                if (out.length >= MAX_3D_INSTANCES) return out;
+            }
         }
+        return out;
+    },
+
+    async build() {
+        if (!this.scene || !map) return;
+        const token = (this._buildToken = (this._buildToken || 0) + 1);
+        this.disposeInstances();
+        const all = this.collect();
+        const z = map.getZoom();
+        if ((z < MODEL3D_ZOOM_GATE && all.length > MODEL3D_GATE_COUNT) || all.length === 0) { map.triggerRepaint(); return; }
+        if (!this.origin) this.setOrigin(all[0].lng, all[0].lat);
+        this.originElev = STATE.settings.terrain3D ? (map.queryTerrainElevation(this.origin) || 0) : 0;
+
+        const byUrl = new Map();
+        for (const it of all) { if (!byUrl.has(it.url)) byUrl.set(it.url, []); byUrl.get(it.url).push(it); }
+        const urls = [...byUrl.keys()];
+        const protos = await Promise.all(urls.map((u) => this.ensureProto(u)));
+        if (!this.scene || token !== this._buildToken) return; // superseded / style changé
+
+        this.slotIndex.clear();
+        urls.forEach((url, ui) => {
+            const proto = protos[ui]; const items = byUrl.get(url);
+            if (!proto) return;
+            const meshes = proto.map((part) => {
+                const im = new THREE.InstancedMesh(part.geometry, part.material, items.length);
+                im.frustumCulled = false;
+                return { im, protoMat: part.mat };
+            });
+            items.forEach((it, slot) => {
+                const layer = STATE.layers.find((l) => l.id === it.layerId);
+                const feature = layer?.geojson?.features?.[it.idx];
+                if (!feature) return;
+                const place = this.placement(layer, feature);
+                meshes.forEach(({ im, protoMat }) => { this._m4.multiplyMatrices(place, protoMat); im.setMatrixAt(slot, this._m4); });
+                this.slotIndex.set(it.layerId + ':' + it.idx, { url, slot });
+            });
+            meshes.forEach(({ im }) => { im.instanceMatrix.needsUpdate = true; this.scene.add(im); });
+            this.groups.set(url, { meshes, items });
+        });
+        map.triggerRepaint();
+    },
+
+    // recompute TOUTES les matrices (sans regrouper) — relief chargé / exagération
+    recomputeAll() {
+        if (!this.origin || !map || !this.scene) return;
+        this.elevCache.clear();
+        this.originElev = STATE.settings.terrain3D ? (map.queryTerrainElevation(this.origin) || 0) : 0;
+        for (const [, g] of this.groups) {
+            g.items.forEach((it, slot) => {
+                const layer = STATE.layers.find((l) => l.id === it.layerId);
+                const feature = layer?.geojson?.features?.[it.idx];
+                if (!feature) return;
+                const place = this.placement(layer, feature);
+                g.meshes.forEach(({ im, protoMat }) => { this._m4.multiplyMatrices(place, protoMat); im.setMatrixAt(slot, this._m4); });
+            });
+            g.meshes.forEach(({ im }) => { im.instanceMatrix.needsUpdate = true; });
+        }
+        map.triggerRepaint();
+    },
+
+    // FAST PATH — met à jour les matrices des features éditées sans rebuild
+    updateEdited(layerId, indices) {
+        if (!this.origin || !this.scene) { this.scheduleBuild(); return; }
+        const layer = STATE.layers.find((l) => l.id === layerId); if (!layer) return;
+        let touched = false, missing = false;
+        for (const idx of indices) {
+            const ref = this.slotIndex.get(layerId + ':' + idx);
+            if (!ref) { missing = true; continue; } // hors emprise / non instancié
+            const g = this.groups.get(ref.url); if (!g) continue;
+            const feature = layer.geojson.features[idx]; if (!feature) continue;
+            const place = this.placement(layer, feature);
+            g.meshes.forEach(({ im, protoMat }) => { this._m4.multiplyMatrices(place, protoMat); im.setMatrixAt(ref.slot, this._m4); im.instanceMatrix.needsUpdate = true; });
+            touched = true;
+        }
+        if (touched) map.triggerRepaint();
+        if (missing) this.scheduleBuild();
+    },
+
+    cull() { clearTimeout(this._cullTimer); this._cullTimer = setTimeout(() => this.build(), 200); },
+
+    disposeInstances() {
+        if (!this.scene) { this.groups.clear(); this.slotIndex.clear(); return; }
+        for (const [, g] of this.groups) g.meshes.forEach(({ im }) => { this.scene.remove(im); im.dispose?.(); });
+        this.groups.clear(); this.slotIndex.clear();
+    },
+
+    setSun(azimuthDeg, altitudeDeg, moon) {
+        const az = deg2rad(azimuthDeg), al = deg2rad(Math.max(-0.1, altitudeDeg));
+        // espace scène local : X=est, Y=haut, Z=-nord
+        this.sunDir.set(Math.sin(az) * Math.cos(al), Math.sin(al), -Math.cos(az) * Math.cos(al)).normalize();
+        if (!this.dirLight) return;
+        const amb = computeAmbient(altitudeDeg, moon);
+        this.dirLight.color.set(amb.sunColor); this.dirLight.intensity = amb.sunIntensity * (STATE.settings.shadows ? 1.0 : 0.7);
+        this.ambLight.color.set(amb.ambientColor); this.ambLight.intensity = amb.ambientIntensity;
+        if (this.hemiLight) this.hemiLight.intensity = amb.hemiIntensity;
         map && map.triggerRepaint();
     },
 };
-
-const MAX_3D_INSTANCES = 1200;
-function collectModelInstances() {
-    const out = [];
-    for (const layer of STATE.layers) {
-        if (layer.visible === false) continue;
-        if (layer.geometryType !== 'Point' && layer.geometryType !== 'MultiPoint') continue;
-        if (layer.style?.mode !== 'library' && layer.style?.mode !== 'custom') continue;
-        const defUrl = getLayerModelUrl(layer);
-        const sym = layer.style.symbolization || {};
-        const categorized = sym.model?.mode === 'categorized' && sym.model.field;
-        if (!defUrl && !categorized) continue;
-        for (let idx = 0; idx < (layer.geojson?.features?.length || 0); idx++) {
-            const f = layer.geojson.features[idx];
-            if (f.geometry?.type !== 'Point') continue;
-            const props = resolveFeatureProps(f, layer);
-            let url = defUrl;
-            if (props.modelId) { const mm = findModel(props.modelId); if (mm) url = mm.url; }
-            if (!url) continue;
-            const [lng, lat] = f.geometry.coordinates;
-            out.push({ url, lng, lat, alt: props.offsetZ, scale: props.scale, rx: props.rotationX, ry: props.rotationY, rz: props.rotationZ });
-            if (out.length >= MAX_3D_INSTANCES) return out;
-        }
-    }
-    return out;
-}
 function getLayerModelUrl(layer) {
     const s = layer.style;
     if (!s) return null;
@@ -412,9 +650,10 @@ function resolveFeatureProps(feature, layer) {
 // MAP (MapLibre)
 // ============================================================
 function initMap() {
+    const _bm = BASEMAPS[STATE.settings.basemap] || BASEMAPS.liberty;
     map = new maplibregl.Map({
         container: 'map',
-        style: BASEMAPS[STATE.settings.basemap].url,
+        style: _bm.style ? _bm.style() : _bm.url,
         center: [STATE.location.lng, STATE.location.lat],
         zoom: CONFIG.defaultZoom,
         pitch: CONFIG.defaultPitch,
@@ -429,6 +668,8 @@ function initMap() {
     map.on('rotate', () => {
         $('compass-svg').style.transform = `rotate(${map.getBearing()}deg)`;
     });
+    // OPTIM (EclExt) : ré-instancie les modèles dans l'emprise + invalide le cache d'élévation
+    map.on('moveend', () => { Models3D.elevCache.clear(); Models3D.cull(); });
 
     setupInteraction();
 }
@@ -438,17 +679,8 @@ function onStyleReady() {
     applyBuildingVisibility();
     applyLabelsVisibility();
 
-    // Terrain (free terrarium DEM, no key)
-    if (!map.getSource('terrain-dem')) {
-        try {
-            map.addSource('terrain-dem', {
-                type: 'raster-dem',
-                tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
-                encoding: 'terrarium', tileSize: 256, maxzoom: 14,
-                attribution: 'Terrain: Mapzen / AWS Open Data',
-            });
-        } catch (e) { /* ignore */ }
-    }
+    // Terrain (source DEM choisie : terrarium mondial ou LIDAR HD IGN)
+    addTerrainSource();
     applyTerrain();
     applySky();
 
@@ -479,10 +711,27 @@ function applyLabelsVisibility() {
         }
     });
 }
+function addTerrainSource() {
+    const cfg = TERRAIN_SOURCES[STATE.settings.terrainSource] || TERRAIN_SOURCES.terrarium;
+    if (!map.getSource('terrain-dem')) {
+        try {
+            map.addSource('terrain-dem', { type: 'raster-dem', tiles: cfg.tiles, encoding: cfg.encoding, tileSize: cfg.tileSize, maxzoom: cfg.maxzoom, attribution: cfg.attribution });
+        } catch (e) { /* ignore */ }
+    }
+}
 function applyTerrain() {
     if (!map.getSource('terrain-dem')) return;
     if (STATE.settings.terrain3D) map.setTerrain({ source: 'terrain-dem', exaggeration: STATE.settings.terrainExaggeration });
     else map.setTerrain(null);
+}
+function setTerrainSource(src) {
+    STATE.settings.terrainSource = src;
+    if (!map) return;
+    try { map.setTerrain(null); } catch (e) {}
+    if (map.getSource('terrain-dem')) { try { map.removeSource('terrain-dem'); } catch (e) {} }
+    addTerrainSource();
+    if (STATE.settings.terrain3D) applyTerrain();
+    Models3D.recomputeAll();
 }
 function applySky() {
     if (typeof map.setSky !== 'function') return;
@@ -519,15 +768,16 @@ function sunPosition() {
 }
 function updateLighting() {
     if (!map) return;
-    const { azimuth, altitude } = sunPosition();
+    const { azimuth, altitude, date } = sunPosition();
+    const c = map.getCenter();
+    const moon = computeMoon(date, c.lat, c.lng);
+    const amb = computeAmbient(altitude, moon);
     const polar = clamp(90 - altitude, 5, 88);
-    const dayFactor = clamp((altitude + 6) / 60, 0, 1);
-    const intensity = 0.25 + dayFactor * 0.45;
-    const color = altitude < 0 ? '#3a4a6a' : altitude < 12 ? '#ffcf9e' : '#ffffff';
-    try {
-        map.setLight({ anchor: 'map', position: [1.2, azimuth, polar], color, intensity });
-    } catch (e) {}
-    Models3D.setSun(azimuth, altitude);
+    try { map.setLight({ anchor: 'map', position: [1.2, azimuth, polar], color: amb.mapColor, intensity: amb.mapIntensity }); } catch (e) {}
+    if (STATE.settings.sky && typeof map.setSky === 'function') {
+        try { map.setSky({ 'sky-color': amb.sky, 'horizon-color': amb.horizon, 'fog-color': amb.horizon, 'fog-ground-blend': 0.4, 'horizon-fog-blend': 0.6, 'sky-horizon-blend': 0.7 }); } catch (e) {}
+    }
+    Models3D.setSun(azimuth, altitude, moon);
     updateSunStrip();
 }
 
@@ -611,7 +861,7 @@ function applyPointStyle(layer) {
             'circle-radius': 7, 'circle-color': layer.color, 'circle-opacity': 0.18,
             'circle-stroke-width': 1, 'circle-stroke-color': layer.color, 'circle-stroke-opacity': 0.5,
         }});
-        Models3D.rebuildScene();
+        Models3D.scheduleBuild();
     } else {
         // native circle
         let radius = sym.size.value || 8;
@@ -682,7 +932,7 @@ function setLayerVisibility(layer, visible) {
     ['', '-outline', '-label'].forEach((sfx) => {
         if (map.getLayer(layer.id + sfx)) map.setLayoutProperty(layer.id + sfx, 'visibility', vis);
     });
-    Models3D.rebuildScene();
+    Models3D.scheduleBuild();
 }
 
 // ============================================================
@@ -892,6 +1142,10 @@ function renderVues() {
             <div class="section-title">Rendu 3D</div>
             <div class="toggle-row"><span class="tlabel">🏢 Bâtiments 3D</span><div class="toggle ${s.buildings3D ? 'on' : ''}" onclick="A.toggleSetting('buildings3D')"></div></div>
             <div class="toggle-row"><span class="tlabel">⛰️ Terrain 3D</span><div class="toggle ${s.terrain3D ? 'on' : ''}" onclick="A.toggleSetting('terrain3D')"></div></div>
+            <label class="input-label" style="margin-top:6px">Source du relief</label>
+            <select class="input" onchange="A.setTerrainSource(this.value)">
+                ${Object.entries(TERRAIN_SOURCES).map(([k, t]) => `<option value="${k}" ${s.terrainSource === k ? 'selected' : ''}>${t.label}</option>`).join('')}
+            </select>
             <div class="slider-head" style="margin-top:8px"><span class="lbl">Exagération relief</span><span class="val" id="v-exag">${s.terrainExaggeration}×</span></div>
             <input type="range" class="rng" min="1" max="3" step="0.1" value="${s.terrainExaggeration}" oninput="A.setExag(this.value)">
             <div class="toggle-row"><span class="tlabel">🏷️ Étiquettes</span><div class="toggle ${s.labels ? 'on' : ''}" onclick="A.toggleSetting('labels')"></div></div>
@@ -1629,7 +1883,7 @@ const A = {
     toggleSetting(key) {
         STATE.settings[key] = !STATE.settings[key];
         if (key === 'buildings3D') applyBuildingVisibility();
-        else if (key === 'terrain3D') applyTerrain();
+        else if (key === 'terrain3D') { applyTerrain(); setTimeout(() => Models3D.recomputeAll(), 250); }
         else if (key === 'labels') applyLabelsVisibility();
         else if (key === 'sky') applySky();
         else if (key === 'shadows') { updateLighting(); $('shadow-toggle').classList.toggle('on', STATE.settings.shadows); }
@@ -1643,12 +1897,14 @@ const A = {
     },
     setPitch(v) { map.setPitch(+v); $('v-pitch').textContent = Math.round(v) + '°'; },
     setBearing(v) { map.setBearing(+v); $('v-bearing').textContent = Math.round(v) + '°'; },
-    setExag(v) { STATE.settings.terrainExaggeration = +v; $('v-exag').textContent = v + '×'; if (STATE.settings.terrain3D) applyTerrain(); },
+    setExag(v) { STATE.settings.terrainExaggeration = +v; $('v-exag').textContent = v + '×'; if (STATE.settings.terrain3D) { applyTerrain(); clearTimeout(this._exagT); this._exagT = setTimeout(() => Models3D.recomputeAll(), 200); } },
     setBasemap(k) {
         STATE.settings.basemap = k; renderVues();
-        map.setStyle(BASEMAPS[k].url);
+        const b = BASEMAPS[k];
+        map.setStyle(b.style ? b.style() : b.url);
         map.once('idle', onStyleReady);
     },
+    setTerrainSource(src) { setTerrainSource(src); renderVues(); },
     resetView() { map.easeTo({ center: [STATE.location.lng, STATE.location.lat], zoom: 16, pitch: 55, bearing: -18, duration: 1000 }); },
 
     // Symbology
@@ -1697,7 +1953,7 @@ const A = {
         const l = STATE.layers.find((x) => x.id === id); if (!l) return;
         l.style.common = l.style.common || {}; l.style.common[param] = +v;
         const el = $(elId); if (el) el.textContent = v + (unit || '');
-        Models3D.scheduleRebuild();
+        Models3D.updateEdited(id, (l.geojson?.features || []).map((_, i) => i));
     },
     toggleLabel(id) { const l = STATE.layers.find((x) => x.id === id); if (!l) return; const lab = initSymbolization(l).label; lab.enabled = !lab.enabled; applyLayerStyle(l); renderInspector(); },
     resetSymbology(id) {
@@ -1734,12 +1990,12 @@ const A = {
                 else setFeatureOverride(layer, i, param, (base[param] || 0) + v);
             });
         }
-        Models3D.scheduleRebuild();
+        Models3D.updateEdited(layer.id, multi ? STATE.selection.features : [STATE.selection.features[0]]);
     },
     resetSelected() {
         const l = STATE.layers.find((x) => x.id === STATE.selection.layerId); if (!l) return;
         STATE.selection.features.forEach((i) => clearFeatureOverrides(l, i));
-        multiBaseValues = null; Models3D.rebuildScene(); renderInspector(); showToast('Réinitialisé', 'success');
+        multiBaseValues = null; Models3D.updateEdited(l.id, STATE.selection.features); renderInspector(); showToast('Réinitialisé', 'success');
     },
     applySelected() {
         const l = STATE.layers.find((x) => x.id === STATE.selection.layerId);

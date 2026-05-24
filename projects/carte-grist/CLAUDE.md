@@ -32,12 +32,39 @@ carte-grist/
 ## Décisions techniques (validées avec l'utilisateur)
 
 1. **Direction = Atlas** (parmi Atlas / Workbench / Compass du design canvas).
-2. **Fond de carte = OpenFreeMap** (`tiles.openfreemap.org`, gratuit, sans clé).
-   Styles : Liberty (3D), Bright (plan), Positron (clair). Les bâtiments 3D
-   viennent des couches `fill-extrusion` du style Liberty.
-3. **Modèles 3D = custom layer three.js** : MapLibre n'a pas de couche `model`
-   native ; on charge les GLTF (`GLTFLoader`) et on les place via des matrices
-   `MercatorCoordinate`. Voir l'objet `Models3D` dans `app.js`.
+2. **Fonds de carte** : OpenFreeMap (Liberty 3D / Bright / Positron, sans clé ;
+   bâtiments 3D via `fill-extrusion`) **+ IGN Géoplateforme** (Plan IGN, Ortho IGN
+   — raster, cible territoriale FR).
+3. **Modèles 3D = custom layer three.js en InstancedMesh** (moteur inspiré
+   d'EclExt) : MapLibre n'a pas de couche `model` native. Voir `Models3D`.
+
+## Moteur 3D (`Models3D`) — repris/adapté d'EclExt
+
+- **InstancedMesh** : 1 `InstancedMesh` par sous-maille de GLTF × groupe de
+  modèle (au lieu d'un clone par objet) → des milliers d'objets tenables.
+  Plafond `MAX_3D_INSTANCES = 20000`.
+- **Origine de scène locale** (`setOrigin`/`localMeters`) : objets exprimés en
+  mètres locaux, une seule matrice d'origine par frame (`_m4Origin`) → précision
+  + matrices d'instances constantes.
+- **Placement sur le relief** : `elevAt` (cache) interroge `queryTerrainElevation`
+  par objet ; re-sync automatique quand les tuiles DEM arrivent (drift dans
+  `render` → `recomputeAll`).
+- **Fast-path d'édition** (`updateEdited`) : les sliders de l'inspecteur ne
+  recalculent que les matrices des objets concernés (pas de rebuild/reload GLTF).
+- **Culling viewport + gate de zoom** (`collect`, `cull` au `moveend`) :
+  n'instancie que les objets dans l'emprise ; sous `MODEL3D_ZOOM_GATE` et au-delà
+  de `MODEL3D_GATE_COUNT`, la 3D est masquée.
+- Matériaux forcés en `DoubleSide` (la matrice d'origine a un Y négatif mercator
+  → éviterait sinon le culling des faces avant des GLTF arbitraires).
+
+## Relief & ambiance
+
+- **Sources de relief** (`TERRAIN_SOURCES`) : terrarium mondial (sans clé) **ou
+  LIDAR HD IGN** (France) décodé GeoTIFF Float32 → TerrainRGB via le protocole
+  `ignmnt://` dans un **pool de Web Workers** (créé à la 1re utilisation).
+- **Éclairage** : `computeAmbient` (jour/crépuscule/nuit) + `computeMoon`
+  (éclairement lunaire SunCalc) pilotent `map.setLight`, le ciel `setSky` et les
+  lumières three.js (`Models3D.setSun`).
 
 ## Conventions
 
@@ -69,12 +96,13 @@ carte-grist/
 - **Ombres portées** : MapLibre ne projette pas d'ombres au sol comme Mapbox
   Standard. Le toggle « Ombres » module l'éclairage des modèles three.js (pas de
   shadow map au sol). La direction de lumière suit bien la position solaire.
-- **Perf 3D** : `MAX_3D_INSTANCES = 1200`. Au-delà, seuls les cercles de la
-  couche sont affichés (pas de modèles). Le rebuild de la scène est *debounced*
-  (`Models3D.scheduleRebuild`).
-- **Sémantique des rotations** des modèles : `rotationZ` = azimut (lacet) — le
-  contrôle principal. `rotationX`/`rotationY` (tangage/roulis) sont approximatifs
-  (conversion repère GLTF Y-up → mercator Z-up).
+- **Perf 3D** : rendu en InstancedMesh (cf. section « Moteur 3D »), plafond
+  `MAX_3D_INSTANCES = 20000`, culling viewport + gate de zoom.
+- **Sémantique des rotations** des modèles : `rotationZ` = azimut (lacet, ordre
+  d'Euler `YXZ`) — le contrôle principal. `rotationX`/`rotationY` (tangage/roulis)
+  restent approximatifs.
+- **MNT IGN** : `ignmnt://` requiert `OffscreenCanvas` (Chrome/Edge/Firefox,
+  Safari ≥ 16.4) ; repli tuile plate si décodage échoue. Couverture France.
 - **Interaction sur les modèles 3D** : les objets three.js ne sont pas
   interrogeables par `queryRenderedFeatures`. On ajoute donc une couche de
   cercles MapLibre (faible opacité) servant de zone de clic / surbrillance.
