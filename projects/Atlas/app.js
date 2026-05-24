@@ -427,6 +427,7 @@ async function flatDemTile() {
 const MAX_3D_INSTANCES = 20000;       // plafond élevé grâce à l'instancing
 const MODEL3D_ZOOM_GATE = 11;          // sous ce zoom on cache la 3D si beaucoup d'objets
 const MODEL3D_GATE_COUNT = 4000;
+const SHADOW_FEATURE_CAP = 1500;       // ombres portées réelles seulement sous ce nombre d'objets visibles
 
 const Models3D = {
     layerId: 'three-models-3d',
@@ -438,7 +439,7 @@ const Models3D = {
     origin: null, originMC: null, originScale: 1, originElev: 0,
     elevCache: new Map(),
     sunDir: new THREE.Vector3(0.4, 0.7, 0.4).normalize(),
-    dirLight: null, ambLight: null, hemiLight: null,
+    dirLight: null, ambLight: null, hemiLight: null, groundShadow: null, _shadowFeasible: false,
     _buildTimer: null, _cullTimer: null, _driftTimer: null, _lastOriginElev: undefined,
     _m4Origin: new THREE.Matrix4(), _m4VP: new THREE.Matrix4(),
     _mRotX: new THREE.Matrix4().makeRotationX(Math.PI / 2),
@@ -464,6 +465,22 @@ const Models3D = {
                 self.scene.add(self.ambLight, self.dirLight, self.hemiLight);
                 self.renderer = new THREE.WebGLRenderer({ canvas: m.getCanvas(), context: gl, antialias: true });
                 self.renderer.autoClear = false;
+                // Ombres portées (shadow maps) — actives seulement hors terrain 3D
+                // (avec terrain MapLibre rend dans un FBO offscreen incompatible).
+                try {
+                    self.renderer.shadowMap.enabled = true;
+                    self.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                    self.dirLight.castShadow = true;
+                    const sh = self.dirLight.shadow;
+                    sh.mapSize.set(2048, 2048);
+                    sh.camera.near = 1; sh.camera.far = 1400;
+                    sh.camera.left = -260; sh.camera.right = 260; sh.camera.top = 260; sh.camera.bottom = -260;
+                    sh.bias = -0.0005; sh.normalBias = 0.6;
+                    self.scene.add(self.dirLight.target);
+                    const g = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), new THREE.ShadowMaterial({ opacity: 0.34 }));
+                    g.rotation.x = -Math.PI / 2; g.position.y = 0.02; g.receiveShadow = true; g.frustumCulled = false;
+                    self.groundShadow = g; self.scene.add(g);
+                } catch (e) { console.warn('shadow setup', e.message); }
                 self.build();
             },
             render(gl, matrix) {
@@ -481,7 +498,21 @@ const Models3D = {
                 const s = mc.meterInMercatorCoordinateUnits();
                 self._vScale.set(s, -s, s);
                 self._m4Origin.makeTranslation(mc.x, mc.y, mc.z).scale(self._vScale).multiply(self._mRotX);
-                self.dirLight.position.copy(self.sunDir).multiplyScalar(100);
+                // Ombres : seulement hors terrain, sous le plafond d'objets, et zoomé.
+                const wantShadow = STATE.settings.shadows && !STATE.settings.terrain3D && self._shadowFeasible && self.sunDir.y > 0.05 && map.getZoom() >= 14;
+                if (self.renderer.shadowMap.enabled !== wantShadow) self.renderer.shadowMap.enabled = wantShadow;
+                self.dirLight.castShadow = wantShadow;
+                if (self.groundShadow) self.groundShadow.visible = wantShadow;
+                if (wantShadow) {
+                    // centrer la lumière/ombre sur le centre de vue (mètres locaux)
+                    const c = map.getCenter(), lm = self.localMeters(c.lng, c.lat);
+                    const cx = lm.x, cz = -lm.y;
+                    self.dirLight.target.position.set(cx, 0, cz);
+                    self.dirLight.position.set(cx + self.sunDir.x * 300, self.sunDir.y * 300, cz + self.sunDir.z * 300);
+                    self.dirLight.target.updateMatrixWorld();
+                } else {
+                    self.dirLight.position.copy(self.sunDir).multiplyScalar(300);
+                }
                 self._m4VP.fromArray(arr).multiply(self._m4Origin);
                 self.camera.projectionMatrix.copy(self._m4VP);
                 self.renderer.resetState();
@@ -577,6 +608,7 @@ const Models3D = {
         this.disposeInstances();
         const all = this.collect();
         const z = map.getZoom();
+        this._shadowFeasible = all.length > 0 && all.length <= SHADOW_FEATURE_CAP; // ombres réelles seulement sous ce plafond
         if ((z < MODEL3D_ZOOM_GATE && all.length > MODEL3D_GATE_COUNT) || all.length === 0) { map.triggerRepaint(); return; }
         if (!this.origin) this.setOrigin(all[0].lng, all[0].lat);
         this.originElev = STATE.settings.terrain3D ? (map.queryTerrainElevation(this.origin) || 0) : 0;
@@ -593,7 +625,7 @@ const Models3D = {
             if (!proto) return;
             const meshes = proto.map((part) => {
                 const im = new THREE.InstancedMesh(part.geometry, part.material, items.length);
-                im.frustumCulled = false;
+                im.frustumCulled = false; im.castShadow = true; im.receiveShadow = true;
                 return { im, protoMat: part.mat };
             });
             items.forEach((it, slot) => {
@@ -844,6 +876,10 @@ function updateLighting() {
         try { map.setSky({ 'sky-color': amb.sky, 'horizon-color': amb.horizon, 'fog-color': amb.horizon, 'fog-ground-blend': 0.4, 'horizon-fog-blend': 0.6, 'sky-horizon-blend': 0.7, 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 6, 1, 9, 0] }); } catch (e) {}
     }
     Models3D.setSun(azimuth, altitude, moon);
+    // Teinte nocturne de la scène (le fond vecteur ne s'assombrit pas seul) — atténuée par la lune
+    const tint = clamp((6 - altitude) / 26, 0, 0.62) * (moon && moon.isUp ? (1 - moon.moonIntensity * 0.35) : 1);
+    const nt = $('night-tint');
+    if (nt) nt.style.background = tint <= 0.015 ? 'transparent' : `rgba(16,24,58,${tint.toFixed(3)})`;
     updateSunStrip();
 }
 
@@ -1189,8 +1225,8 @@ function renderSoleil() {
             <div class="range-info">📍 Soleil : <strong>${azimuth.toFixed(0)}° ${cardinal}</strong> · Hauteur <strong>${altitude.toFixed(1)}°</strong></div>
         </div>
         <div class="section">
-            <div class="toggle-row"><span class="tlabel">Éclairage par les ombres</span><div class="toggle ${STATE.settings.shadows ? 'on' : ''}" onclick="A.toggleSetting('shadows')"></div></div>
-            <div class="hint" style="margin-top:8px">💡 La direction de la lumière suit la position astronomique réelle (SunCalc). MapLibre ne projette pas d'ombres au sol comme Mapbox Standard ; l'effet porte sur l'éclairage des modèles 3D et du bâti.</div>
+            <div class="toggle-row"><span class="tlabel">Ombres portées</span><div class="toggle ${STATE.settings.shadows ? 'on' : ''}" onclick="A.toggleSetting('shadows')"></div></div>
+            <div class="hint" style="margin-top:8px">💡 Vraies ombres des modèles 3D (direction = position solaire SunCalc), au zoom rue, ${STATE.settings.terrain3D ? '<strong>désactivées car le relief 3D est actif</strong>' : 'jusqu’à 1500 objets visibles'}. Le bâti n’a pas d’ombre (limite MapLibre).</div>
         </div>`;
 }
 

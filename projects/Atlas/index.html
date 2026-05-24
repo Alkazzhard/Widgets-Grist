@@ -186,6 +186,7 @@
         /* Map frame */
         .map-frame { flex: 1; position: relative; background: var(--bg); overflow: hidden; min-width: 0; }
         #map { position: absolute; inset: 0; }
+        #night-tint { position: absolute; inset: 0; pointer-events: none; z-index: 5; mix-blend-mode: multiply; background: transparent; transition: background 400ms ease; }
         #map .maplibregl-ctrl-attrib { background: rgba(255,255,255,0.7); font-size: 10px; }
 
         /* Inspector (right) */
@@ -591,6 +592,7 @@
             <!-- MAP -->
             <div class="map-frame" id="map-frame">
                 <div id="map"></div>
+                <div id="night-tint"></div>
 
                 <div class="compass" id="compass" title="Réorienter au Nord">
                     <svg width="54" height="54" viewBox="0 0 54 54" id="compass-svg">
