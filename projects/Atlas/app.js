@@ -1118,11 +1118,17 @@ function renderLayersPanel(mode) {
 }
 
 // ---- Modèles 3D ----
+// Module Modèles = gestion du CATALOGUE pour l'app (jeu, source, galerie).
+// Le CHOIX du modèle d'une couche se fait dans l'inspecteur (onglet Modèle 3D).
 function renderModelsPanel() {
-    $('module-title').textContent = 'Modèles 3D';
+    $('module-title').textContent = 'Catalogue 3D';
+    const nModels = allModels().length;
     const layer = STATE.layers.find((l) => l.id === STATE.selectedLayer);
     const isPoint = layer && (layer.geometryType === 'Point' || layer.geometryType === 'MultiPoint');
-    const setSelector = `
+    const banner = isPoint
+        ? `<div class="hint" style="border-left-color:var(--accent)">Couche sélectionnée : <strong>${layer.name}</strong>.<button class="btn btn-primary btn-full" style="margin-top:8px" onclick="A.openLayerModel('${layer.id}')">→ Choisir le modèle de cette couche</button></div>`
+        : `<div class="hint">⚙️ Réglages du catalogue, valables pour toute l'app. Pour <strong>affecter un modèle à une couche</strong> : sélectionne une couche de points (module Couches) → onglet <strong>Modèle 3D</strong> de l'inspecteur.</div>`;
+    $('module-body').innerHTML = banner + `
         <div class="section">
             <div class="section-title">Jeu de modèles</div>
             <div class="seg">
@@ -1139,29 +1145,14 @@ function renderModelsPanel() {
                 <button class="btn btn-primary" style="flex:1" onclick="A.setModelBase(document.getElementById('model-src-input').value)">Appliquer</button>
             </div>
             <div class="hint" style="margin-top:6px">Doit contenir <code>colored/</code>, <code>mono/</code> et <code>catalog.json</code>. En local : sers la racine du repo et ouvre <code>/projects/Atlas/index.html</code>.</div>
+        </div>
+        <div class="section">
+            <div class="section-title">Catalogue · ${nModels} modèles</div>
+            ${Object.entries(MODEL_LIBRARY.categories).map(([k, c]) => `
+                <div style="margin:10px 0 4px;font-size:10.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em">${c.icon} ${c.name} <span style="color:var(--muted-light)">· ${c.models.length}</span></div>
+                <div class="model-grid">${c.models.map((m) => `<div class="model-card" title="${m.name}" style="cursor:default"><div class="mi">${m.icon}</div><div class="mn">${m.name}</div></div>`).join('')}</div>
+            `).join('')}
         </div>`;
-    if (!isPoint) {
-        $('module-body').innerHTML = setSelector + `<div class="empty"><div class="ic">📦</div><div class="t">Sélectionnez une couche de points</div><div class="h">Les modèles 3D s'appliquent aux couches ponctuelles (mobilier, arbres…)</div></div>`;
-        return;
-    }
-    const cat = layer._modelCat || 'lighting';
-    const models = MODEL_LIBRARY.categories[cat].models.map((m) => ({ ...m, url: MODEL_LIBRARY.baseUrl + m.file }));
-    const selId = layer.style?.library?.modelId;
-    $('module-body').innerHTML = setSelector + `
-        <div class="hint">📦 Couche « ${layer.name} » — choisissez un modèle GLTF (rendu three.js).</div>
-        <div class="section">
-            <div class="section-title">Catégorie</div>
-            <select class="input" onchange="A.setModelCat('${layer.id}', this.value)">
-                ${Object.entries(MODEL_LIBRARY.categories).map(([k, c]) => `<option value="${k}" ${cat === k ? 'selected' : ''}>${c.icon} ${c.name}</option>`).join('')}
-            </select>
-        </div>
-        <div class="section">
-            <div class="section-title">Modèle</div>
-            <div class="model-grid">
-                ${models.map((m) => `<div class="model-card ${selId === m.id ? 'active' : ''}" onclick="A.pickModel('${layer.id}', '${m.id}')"><div class="mi">${m.icon}</div><div class="mn">${m.name}</div></div>`).join('')}
-            </div>
-        </div>
-        ${selId ? `<div class="section"><button class="btn btn-soft btn-full" onclick="A.openModule('symbo')">→ Régler échelle / rotation (Symboliser)</button></div>` : ''}`;
 }
 
 // ---- Soleil / Ambiance ----
@@ -1394,26 +1385,38 @@ function symSizePanel(layer, sym) {
 
 function symModelPanel(layer, sym) {
     const m = sym.model;
-    if (layer.style?.mode !== 'library' && layer.style?.mode !== 'custom') {
-        return `<div class="hint">Cette couche utilise un style « Mapbox natif » (cercles). Allez dans le module Modèles 3D pour activer un modèle GLTF, puis revenez régler l'échelle/rotation.</div>
-            <div class="section"><button class="btn btn-primary btn-full" onclick="A.openModule('modeles')">→ Module Modèles 3D</button></div>${commonTransform(layer)}`;
-    }
-    let inner = '';
+    const is3D = layer.style?.mode === 'library' || layer.style?.mode === 'custom';
+    // Représentation de la couche : cercle 2D (Mapbox) ou modèle 3D
+    const repr = `<div class="section"><div class="section-title">Représentation</div>
+        <div class="seg">
+            <button class="${!is3D ? 'active' : ''}" onclick="A.setRepresentation('${layer.id}','mapbox')">⬤ Cercle 2D</button>
+            <button class="${is3D ? 'active' : ''}" onclick="A.setRepresentation('${layer.id}','library')">📦 Modèle 3D</button>
+        </div></div>`;
+    if (!is3D) return repr + `<div class="hint">Couche en cercles 2D (couleur/taille dans les onglets dédiés). Passe en « Modèle 3D » pour choisir un objet du catalogue.</div>`;
+
+    const cat = layer._modelCat || 'lighting';
+    const grid = MODEL_LIBRARY.categories[cat].models;
+    const selId = layer.style?.library?.modelId;
+    const models = allModels();
+    let inner;
     if (m.mode === 'single') {
-        inner = commonTransform(layer);
+        inner = `<div class="section"><div class="section-title">Catégorie</div>
+            <select class="input" onchange="A.setModelCat('${layer.id}', this.value)">${Object.entries(MODEL_LIBRARY.categories).map(([k, c]) => `<option value="${k}" ${cat === k ? 'selected' : ''}>${c.icon} ${c.name}</option>`).join('')}</select></div>
+            <div class="section"><div class="section-title">Modèle de la couche</div>
+            <div class="model-grid">${grid.map((mm) => `<div class="model-card ${selId === mm.id ? 'active' : ''}" onclick="A.pickModel('${layer.id}','${mm.id}')"><div class="mi">${mm.icon}</div><div class="mn">${mm.name}</div></div>`).join('')}</div></div>`;
     } else {
-        const models = allModels();
         inner = `<div class="section"><div class="section-title">Champ source</div>${fieldSelect(layer, 'model', m.field, 'text')}</div>
             ${m.field ? `<div class="section"><div class="section-title">Modèle par valeur</div><div class="cats">${getUniqueValues(layer, m.field, 20).map((v) => {
-                const cat = m.categories.find((c) => String(c.value) === String(v.value));
-                return `<div class="cat-row"><span class="cat-icon">${findModel(cat?.modelId)?.icon || '❓'}</span><span class="cat-value" title="${v.value}">${v.value}</span>
-                    <select class="cat-select" onchange="A.setModelCategory('${layer.id}','${String(v.value).replace(/'/g, "\\'")}', this.value)"><option value="">—</option>${models.map((mm) => `<option value="${mm.id}" ${cat?.modelId === mm.id ? 'selected' : ''}>${mm.icon} ${mm.name}</option>`).join('')}</select>
+                const c2 = m.categories.find((c) => String(c.value) === String(v.value));
+                return `<div class="cat-row"><span class="cat-icon">${findModel(c2?.modelId)?.icon || '❓'}</span><span class="cat-value" title="${v.value}">${v.value}</span>
+                    <select class="cat-select" onchange="A.setModelCategory('${layer.id}','${String(v.value).replace(/'/g, "\\'")}', this.value)"><option value="">—</option>${models.map((mm) => `<option value="${mm.id}" ${c2?.modelId === mm.id ? 'selected' : ''}>${mm.icon} ${mm.name}</option>`).join('')}</select>
                     <span class="cat-count">${v.count}</span></div>`;
             }).join('')}</div></div>
-            <div class="section"><div class="section-title">Modèle par défaut</div><select class="input" onchange="A.setDefaultModel('${layer.id}', this.value)"><option value="">— Aucun —</option>${models.map((mm) => `<option value="${mm.id}" ${m.defaultModelId === mm.id ? 'selected' : ''}>${mm.icon} ${mm.name}</option>`).join('')}</select></div>` : ''}
-            ${commonTransform(layer)}`;
+            <div class="section"><div class="section-title">Modèle par défaut</div><select class="input" onchange="A.setDefaultModel('${layer.id}', this.value)"><option value="">— Aucun —</option>${models.map((mm) => `<option value="${mm.id}" ${m.defaultModelId === mm.id ? 'selected' : ''}>${mm.icon} ${mm.name}</option>`).join('')}</select></div>` : ''}`;
     }
-    return `<div class="section"><div class="section-title">Affectation du modèle</div>${modeSeg(layer, 'model', m.mode, ['single', 'categorized'])}</div>${inner}`;
+    return repr
+        + `<div class="section"><div class="section-title">Affectation</div>${modeSeg(layer, 'model', m.mode, ['single', 'categorized'])}</div>`
+        + inner + commonTransform(layer);
 }
 function commonTransform(layer) {
     const c = layer.style.common = layer.style.common || { scale: 1, rotationX: 0, rotationY: 0, rotationZ: 0, offsetX: 0, offsetY: 0, offsetZ: 0 };
@@ -1961,7 +1964,20 @@ const A = {
     saveLayer(id) { const l = STATE.layers.find((x) => x.id === id); if (l) saveLayerToGrist(l); markDirty(); },
 
     // Modèles
-    setModelCat(id, cat) { const l = STATE.layers.find((x) => x.id === id); if (l) { l._modelCat = cat; renderModelsPanel(); } },
+    setModelCat(id, cat) { const l = STATE.layers.find((x) => x.id === id); if (l) { l._modelCat = cat; renderInspector(); } },
+    // Représentation de la couche : 'mapbox' (cercle 2D) ou 'library' (modèle 3D)
+    setRepresentation(id, mode) {
+        const l = STATE.layers.find((x) => x.id === id); if (!l) return;
+        l.style.mode = mode;
+        if (mode === 'library' && !l.style.library?.modelId) {
+            const cat = l._modelCat || 'lighting';
+            const first = MODEL_LIBRARY.categories[cat].models[0];
+            l.style.library = { modelId: first.id };
+            l.style.common = { ...(l.style.common || {}), scale: first.scale || 1 };
+        }
+        applyPointStyle(l); renderInspector(); markDirty();
+    },
+    openLayerModel(id) { STATE.selectedLayer = id; inspSymTab = 'Modèle 3D'; openModule('symbo'); },
     setModelSet(set) {
         MODEL_LIBRARY.set = set; STATE.settings.modelSet = set;
         Models3D.gltfCache.clear(); Models3D.protoCache.clear(); // recharger les GLB du nouveau set
@@ -1987,9 +2003,14 @@ const A = {
     pickModel(id, modelId) {
         const l = STATE.layers.find((x) => x.id === id); if (!l) return;
         l.style.mode = 'library'; l.style.library = { modelId };
+        // remplace réellement : repasse en modèle unique et purge le mode catégorisé
+        // + les overrides _modelId par objet (sinon d'anciens modèles « restent »)
+        const sym = initSymbolization(l);
+        sym.model.mode = 'single'; sym.model.field = null; sym.model.categories = []; sym.model.defaultModelId = null;
+        (l.geojson?.features || []).forEach((f) => { if (f.properties) delete f.properties._modelId; });
         const m = findModel(modelId);
         l.style.common = { ...(l.style.common || {}), scale: m?.scale || 1, rotationX: 0, rotationY: 0, rotationZ: 0, offsetX: 0, offsetY: 0, offsetZ: 0 };
-        applyLayerStyle(l); renderModelsPanel(); markDirty();
+        applyLayerStyle(l); renderInspector(); markDirty();
         showToast(`Modèle « ${m?.name} » appliqué`, 'success');
     },
 
