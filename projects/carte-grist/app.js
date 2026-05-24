@@ -59,6 +59,7 @@ const STATE = {
     selection: { mode: false, layerId: null, features: [], multiIndex: 0 },
     settings: {
         basemap: 'liberty',
+        projection: 'globe',     // 'globe' (façon Google Earth, → mercator en zoom) | 'mercator'
         buildings3D: true,
         terrain3D: false,
         terrainSource: 'terrarium',
@@ -674,7 +675,14 @@ function initMap() {
     setupInteraction();
 }
 
+function applyProjection() {
+    if (!map || typeof map.setProjection !== 'function') return; // MapLibre < v5
+    try { map.setProjection({ type: STATE.settings.projection || 'globe' }); } catch (e) {}
+}
+
 function onStyleReady() {
+    // Projection (globe façon Google Earth, bascule auto vers mercator en zoom)
+    applyProjection();
     // 3D buildings come with the Liberty style (fill-extrusion). Toggle visibility.
     applyBuildingVisibility();
     applyLabelsVisibility();
@@ -775,7 +783,8 @@ function updateLighting() {
     const polar = clamp(90 - altitude, 5, 88);
     try { map.setLight({ anchor: 'map', position: [1.2, azimuth, polar], color: amb.mapColor, intensity: amb.mapIntensity }); } catch (e) {}
     if (STATE.settings.sky && typeof map.setSky === 'function') {
-        try { map.setSky({ 'sky-color': amb.sky, 'horizon-color': amb.horizon, 'fog-color': amb.horizon, 'fog-ground-blend': 0.4, 'horizon-fog-blend': 0.6, 'sky-horizon-blend': 0.7 }); } catch (e) {}
+        // atmosphere-blend : halo atmosphérique du globe en vue large, estompé en zoom
+        try { map.setSky({ 'sky-color': amb.sky, 'horizon-color': amb.horizon, 'fog-color': amb.horizon, 'fog-ground-blend': 0.4, 'horizon-fog-blend': 0.6, 'sky-horizon-blend': 0.7, 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 6, 1, 9, 0] }); } catch (e) {}
     }
     Models3D.setSun(azimuth, altitude, moon);
     updateSunStrip();
@@ -1131,6 +1140,14 @@ function renderVues() {
             <input type="range" class="rng" min="0" max="80" step="1" value="${Math.round(map?.getPitch() || 55)}" oninput="A.setPitch(this.value)">
             <div class="slider-head" style="margin-top:12px"><span class="lbl">Rotation</span><span class="val" id="v-bearing">${Math.round(map?.getBearing() || 0)}°</span></div>
             <input type="range" class="rng" min="-180" max="180" step="1" value="${Math.round(map?.getBearing() || 0)}" oninput="A.setBearing(this.value)">
+        </div>
+        <div class="section">
+            <div class="section-title">Projection</div>
+            <div class="seg">
+                <button class="${s.projection === 'globe' ? 'active' : ''}" onclick="A.setProjection('globe')">🌍 Globe</button>
+                <button class="${s.projection === 'mercator' ? 'active' : ''}" onclick="A.setProjection('mercator')">🗺️ Plan</button>
+            </div>
+            <div class="hint" style="margin-top:8px">Le globe (façon Google Earth) bascule automatiquement en plan une fois zoomé sur la zone.</div>
         </div>
         <div class="section">
             <div class="section-title">Fond de carte</div>
@@ -1905,6 +1922,7 @@ const A = {
         map.once('idle', onStyleReady);
     },
     setTerrainSource(src) { setTerrainSource(src); renderVues(); },
+    setProjection(p) { STATE.settings.projection = p; applyProjection(); renderVues(); },
     resetView() { map.easeTo({ center: [STATE.location.lng, STATE.location.lat], zoom: 16, pitch: 55, bearing: -18, duration: 1000 }); },
 
     // Symbology

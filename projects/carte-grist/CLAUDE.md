@@ -37,6 +37,12 @@ carte-grist/
    — raster, cible territoriale FR).
 3. **Modèles 3D = custom layer three.js en InstancedMesh** (moteur inspiré
    d'EclExt) : MapLibre n'a pas de couche `model` native. Voir `Models3D`.
+4. **MapLibre GL JS v5** (`maplibre-gl@5`) pour la **projection globe** (façon
+   Google Earth, bascule auto en mercator au zoom). `applyProjection` /
+   `STATE.settings.projection` ('globe' | 'mercator'), bascule dans le module Vue.
+   Le custom layer 3D lit `args.defaultProjectionData.mainMatrix` (signature
+   render v5) ; les modèles sont corrects en mercator (zoom utile), au globe
+   très dézoomé ils peuvent être légèrement décalés (objets minuscules).
 
 ## Moteur 3D (`Models3D`) — repris/adapté d'EclExt
 
