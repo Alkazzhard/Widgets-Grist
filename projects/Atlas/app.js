@@ -2268,6 +2268,10 @@ const A = {
                 ...Object.keys(ovUsed).map((cn) => ({ id: cn, fields: { label: cn, type: 'Numeric' } })),
             ];
             if (is3D) colDefs.push({ id: 'model_id', fields: { label: 'model_id', type: 'Text' } });
+            // Colonne pièce jointe pour un GLB par enregistrement (couches de points) :
+            // prête à recevoir un modèle 3D propre à chaque objet (Atlas la rend, cf. model_glb).
+            const isPt = layer.geometryType === 'Point' || layer.geometryType === 'MultiPoint';
+            if (isPt) colDefs.push({ id: 'model_glb', fields: { label: 'Modèle 3D (PJ)', type: 'Attachments' } });
             const tableName = sanitizeId('Atlas_' + layer.name);
             const addRes = await grist.docApi.applyUserActions([['AddTable', tableName, colDefs]]);
             const actualTable = addRes?.retValues?.[0]?.table_id || tableName;
