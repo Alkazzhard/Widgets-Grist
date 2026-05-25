@@ -608,7 +608,7 @@ const Models3D = {
             const categorized = sym.model?.mode === 'categorized' && sym.model.field;
             const feats = layer.geojson?.features || [];
             // modèle par objet via colonne/override (convention) : on collecte aussi
-            const perFeatureModel = feats.some((f) => f.properties && (f.properties._modelId || f.properties.model_id));
+            const perFeatureModel = feats.some((f) => f.properties && (f.properties._modelId || f.properties.model_id || f.properties.model_glb));
             if (!defUrl && !categorized && !perFeatureModel) continue;
             for (let idx = 0; idx < feats.length; idx++) {
                 const f = feats[idx];
@@ -616,7 +616,9 @@ const Models3D = {
                 const [lng, lat] = f.geometry.coordinates;
                 if (lng < b.getWest() - buf || lng > b.getEast() + buf || lat < b.getSouth() - buf || lat > b.getNorth() + buf) continue;
                 let url = defUrl;
-                if (categorized || f.properties?._modelId || f.properties?.model_id) { const mm = findModel(resolveFeatureProps(f, layer).modelId); if (mm) url = mm.url; }
+                const attId = featureAttachmentId(f);
+                if (attId != null) { url = attachmentUrlSync(attId); } // modèle en pièce jointe (prioritaire)
+                else if (categorized || f.properties?._modelId || f.properties?.model_id) { const mm = findModel(resolveFeatureProps(f, layer).modelId); if (mm) url = mm.url; }
                 if (!url) continue;
                 out.push({ layerId: layer.id, idx, lng, lat, url });
                 if (out.length >= MAX_3D_INSTANCES) return out;
@@ -1535,7 +1537,8 @@ function renderObjectInspector() {
         const isPt = layer.geometryType === 'Point' || layer.geometryType === 'MultiPoint';
         const modelRow = isPt ? `<div class="slider-row"><div class="slider-head"><span class="lbl">🧩 Modèle 3D</span></div>
             <select class="input" onchange="A.pickFeatureModel(this.value)"><option value="">— cercle 2D —</option>${allModels().map((m) => `<option value="${m.id}" ${r.modelId === m.id ? 'selected' : ''}>${m.icon} ${m.name}</option>`).join('')}</select></div>` : '';
-        $('insp-body').innerHTML = modelRow +
+        const importRow = (isPt && layer.kind === 'table' && CONFIG.grist.ready) ? `<button class="btn btn-soft btn-full" style="margin-top:6px" onclick="A.importObjectModel()">📎 Importer un .glb pour cet objet</button>` : '';
+        $('insp-body').innerHTML = modelRow + importRow +
             slider('f-scale', '📏 Échelle', r.scale, 0.1, 5, 0.05, '×') +
             slider('f-rotationZ', '🔄 Rotation Z (azimut)', r.rotationZ, 0, 360, 5, '°') +
             slider('f-rotationX', '↕️ Rotation X', r.rotationX, -90, 90, 5, '°') +
@@ -1931,6 +1934,41 @@ function inferGristType(vals) {
     if (allInt) return 'Int';
     if (allNum) return 'Numeric';
     return 'Text';
+}
+
+// Jeton d'accès Grist (lecture des pièces jointes via l'API REST) + résolveur d'URL.
+let _gristTok = null;
+async function ensureGristToken() {
+    if (_gristTok && Date.now() < _gristTok.exp) return _gristTok;
+    try {
+        const t = await grist.docApi.getAccessToken({}); // accès complet (lecture PJ + upload)
+        _gristTok = { token: t.token, baseUrl: t.baseUrl, exp: Date.now() + Math.max(10000, (t.ttlMsecs || 60000) - 10000) };
+        return _gristTok;
+    } catch (e) { return null; }
+}
+// Upload d'un GLB en pièce jointe (API REST via jeton) → renvoie l'id d'attachment.
+async function uploadAttachment(file) {
+    const t = await ensureGristToken(); if (!t) throw new Error('jeton Grist indisponible');
+    const fd = new FormData(); fd.append('upload', file, file.name);
+    const res = await fetch(`${t.baseUrl}/attachments?auth=${encodeURIComponent(t.token)}`, { method: 'POST', body: fd });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const ids = await res.json();
+    return Array.isArray(ids) ? ids[0] : ids;
+}
+function attachmentUrlSync(attId) {
+    if (!_gristTok || Date.now() >= _gristTok.exp) {
+        ensureGristToken().then((t) => { if (t) Models3D.scheduleBuild(); });
+        return null;
+    }
+    return `${_gristTok.baseUrl}/attachments/${attId}/download?auth=${_gristTok.token}`;
+}
+// id de pièce jointe d'une feature (colonne model_glb, type Attachments Grist).
+function featureAttachmentId(f) {
+    const v = f.properties && f.properties.model_glb;
+    if (v == null || v === '') return null;
+    if (Array.isArray(v)) { const ids = v[0] === 'L' ? v.slice(1) : v; return ids.length ? ids[0] : null; }
+    if (typeof v === 'number') return v;
+    return null;
 }
 
 const TABLE_SCHEMAS = {
@@ -2474,6 +2512,31 @@ const A = {
             });
         }
         Models3D.updateEdited(layer.id, multi ? STATE.selection.features : [STATE.selection.features[0]]);
+    },
+    importObjectModel() {
+        const layer = STATE.layers.find((l) => l.id === STATE.selection.layerId);
+        if (!layer) return;
+        if (layer.kind !== 'table' || !CONFIG.grist.ready) { showToast('Importer un .glb nécessite une couche liée à une table Grist', 'warning'); return; }
+        const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.glb,model/gltf-binary';
+        inp.onchange = async () => {
+            const file = inp.files && inp.files[0]; if (!file) return;
+            showLoading('Import du modèle 3D…');
+            try {
+                const id = await uploadAttachment(file);
+                if (id == null) throw new Error('upload sans id');
+                const cols = await grist.docApi.fetchTable(layer.sourceTable);
+                if (!('model_glb' in cols)) await grist.docApi.applyUserActions([['AddColumn', layer.sourceTable, 'model_glb', { type: 'Attachments' }]]);
+                const feats = STATE.selection.features.map((i) => layer.geojson.features[i]).filter((f) => f && f.properties && f.properties._rowId != null);
+                if (!feats.length) throw new Error('aucun objet sélectionné');
+                await grist.docApi.applyUserActions([['BulkUpdateRecord', layer.sourceTable, feats.map((f) => f.properties._rowId), { model_glb: feats.map(() => ['L', id]) }]]);
+                feats.forEach((f) => { f.properties.model_glb = ['L', id]; });
+                const isPt = layer.geometryType === 'Point' || layer.geometryType === 'MultiPoint';
+                if (isPt && layer.style.mode !== 'library' && layer.style.mode !== 'custom') { layer.style.mode = 'library'; applyPointStyle(layer); }
+                Models3D.forceBuild(); markDirty();
+                hideLoading(); showToast(`Modèle importé · ${feats.length} objet(s)`, 'success');
+            } catch (e) { hideLoading(); showToast('Import : ' + e.message, 'error'); }
+        };
+        inp.click();
     },
     pickFeatureModel(modelId) {
         const layer = STATE.layers.find((l) => l.id === STATE.selection.layerId); if (!layer) return;
