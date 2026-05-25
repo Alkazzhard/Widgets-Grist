@@ -33,13 +33,49 @@ Une table par couche. Une ligne = un objet. Colonnes :
 | *attributs* (typés) | données ; `Choice` (ValueMap), `Ref`/`RefList` (relations) | ✅ écrit |
 | `fill_color` | couleur **par objet** (hex), dérivée du renderer QGIS | ✅ écrit |
 | `stroke_color`, `size`/`radius`, `opacity` | style par objet (optionnel) | ➕ à ajouter |
-| `height`, `elevation`, `model_id` | 3D : extrusion / altitude / modèle (optionnel) | ➕ |
+| `height`, `elevation` | 3D : extrusion / altitude (optionnel) | ➕ |
+| `model_id` | modèle 3D par objet : id du catalogue intégré, ou URL custom | ➕ |
+| `model_glb` | modèle 3D **en pièce jointe** sur l'objet (type *Attachments*) — **prioritaire** | ➕ |
 | `label` *(ou champ désigné)* | étiquette | ➕ |
+| `hidden` | masque l'objet | ➕ |
 
 **Détection de la géométrie** (ordre) : `geometry_json` → `geometry` → `geom` →
 `wkt` (parse) → paire `latitude`+`longitude` (alias `lat`/`lng`/`lon`).
 
 **Identité** : le **rowId Grist** est la clé stable (sélection, édition, write-back).
+
+**Override = la colonne elle-même.** Chaque colonne d'attribut d'affichage **EST**
+l'override par objet : une valeur non nulle écrase le défaut de couche (cf. §2bis).
+On ne remplit que ce qu'on personnalise (stockage *sparse*, efficace).
+
+---
+
+## 2bis. Résolution des paramètres (défaut couche → override objet)
+
+Pour chaque paramètre d'affichage (`model`, `scale`, `rotation_*`, `offset_*`,
+`height`, `fill_color`, `label`, `hidden`), précédence du plus spécifique au plus
+général :
+
+1. **Override par objet** — valeur de la colonne de l'attribut (couche `table`) ; ou
+   `feature.properties._*` (couche `blob`).
+2. **Liaison à un champ** — symbolisation catégorisée/graduée (param ↔ champ).
+3. **Défaut de couche** — `style.common` / `style.library`.
+4. **Défaut du modèle** — params portés par le modèle (catalogue).
+
+**Modèle 3D** : `model_glb` (PJ objet) > `model_id` (catalogue / URL) > liaison
+champ > défaut couche > défaut modèle.
+
+**Chargement d'un modèle en PJ** : lire l'id d'attachment de la cellule →
+`getAccessToken()` → `{baseUrl}/attachments/{id}/download?auth={token}` →
+`GLTFLoader`. Modèle mis en **cache** (chargé une fois) ; token court → pris à la
+volée au chargement.
+**Upload depuis Atlas** : pas de méthode plugin → REST `POST {baseUrl}/attachments`
+avec le token (⚠️ à confirmer que le token autorise l'écriture ; sinon repli :
+attacher via l'UI Grist, Atlas lit).
+
+**Instancing** : un modèle partagé entre plusieurs objets = **même URL / même id
+d'attachment** → un seul `InstancedMesh` (perf conservée). Pour appliquer un modèle
+à toute une couche/sélection, on propage le même id.
 
 ---
 
