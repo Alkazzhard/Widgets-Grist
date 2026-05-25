@@ -606,15 +606,17 @@ const Models3D = {
             const defUrl = getLayerModelUrl(layer);
             const sym = layer.style.symbolization || {};
             const categorized = sym.model?.mode === 'categorized' && sym.model.field;
-            if (!defUrl && !categorized) continue;
             const feats = layer.geojson?.features || [];
+            // modèle par objet via colonne/override (convention) : on collecte aussi
+            const perFeatureModel = feats.some((f) => f.properties && (f.properties._modelId || f.properties.model_id));
+            if (!defUrl && !categorized && !perFeatureModel) continue;
             for (let idx = 0; idx < feats.length; idx++) {
                 const f = feats[idx];
                 if (f.geometry?.type !== 'Point') continue;
                 const [lng, lat] = f.geometry.coordinates;
                 if (lng < b.getWest() - buf || lng > b.getEast() + buf || lat < b.getSouth() - buf || lat > b.getNorth() + buf) continue;
                 let url = defUrl;
-                if (categorized || f.properties?._modelId) { const mm = findModel(resolveFeatureProps(f, layer).modelId); if (mm) url = mm.url; }
+                if (categorized || f.properties?._modelId || f.properties?.model_id) { const mm = findModel(resolveFeatureProps(f, layer).modelId); if (mm) url = mm.url; }
                 if (!url) continue;
                 out.push({ layerId: layer.id, idx, lng, lat, url });
                 if (out.length >= MAX_3D_INSTANCES) return out;
@@ -730,7 +732,6 @@ function resolveFeatureProps(feature, layer) {
     const p = feature.properties || {};
     const c = layer.style?.common || {};
     const sym = layer.style?.symbolization || {};
-    const baseModel = layer.style?.library?.modelId ? findModel(layer.style.library.modelId) : null;
     const num = (vals, d) => { for (const v of vals) { if (v != null && v !== '') { const n = Number(v); if (!isNaN(n)) return n; } } return d; };
 
     let symScale = null;
@@ -738,21 +739,25 @@ function resolveFeatureProps(feature, layer) {
         const r = getNumericRange(layer, sym.size.field);
         symScale = interpolateValue(p[sym.size.field], [r.min, r.max], sym.size.outputRange || [0.5, 3], sym.size.method);
     }
-    let modelId = p._modelId ?? null;
+    // modèle : override objet (_modelId / colonne model_id) > catégorisé > défaut couche
+    let modelId = p._modelId ?? p.model_id ?? null;
     if (!modelId && sym.model?.mode === 'categorized' && sym.model.field) {
         const cat = sym.model.categories?.find((c2) => String(c2.value) === String(p[sym.model.field]));
         modelId = cat?.modelId ?? sym.model.defaultModelId ?? null;
     }
     if (!modelId) modelId = layer.style?.library?.modelId ?? null;
+    const m = modelId ? findModel(modelId) : null; // défaut du modèle (C)
 
+    // Précédence (convention §2bis) : override objet (_x / colonne) > liaison champ
+    // > défaut couche (style.common) > défaut modèle.
     return {
-        scale: num([p._scale, symScale, c.scale, baseModel?.scale], 1),
-        rotationX: num([p._rotationX, c.rotationX], 0),
-        rotationY: num([p._rotationY, c.rotationY], 0),
-        rotationZ: num([p._rotationZ, c.rotationZ], 0),
-        offsetX: num([p._offsetX, c.offsetX], 0),
-        offsetY: num([p._offsetY, c.offsetY], 0),
-        offsetZ: num([p._offsetZ, c.offsetZ], 0),
+        scale:     num([p._scale, p.scale, symScale, c.scale, m?.scale], 1),
+        rotationX: num([p._rotationX, p.rotation_x, c.rotationX, m?.rotationX], 0),
+        rotationY: num([p._rotationY, p.rotation_y, c.rotationY, m?.rotationY], 0),
+        rotationZ: num([p._rotationZ, p.rotation_z, c.rotationZ, m?.rotationZ], 0),
+        offsetX:   num([p._offsetX, p.offset_x, c.offsetX, m?.offsetX], 0),
+        offsetY:   num([p._offsetY, p.offset_y, c.offsetY, m?.offsetY], 0),
+        offsetZ:   num([p._offsetZ, p.offset_z, c.offsetZ, m?.offsetZ], 0),
         modelId,
     };
 }
@@ -1168,7 +1173,7 @@ function renderLayersPanel(mode) {
                         <div class="layer-name">${l.name}</div>
                         <div class="layer-meta"><span>${l.geojson?.features?.length || 0} obj.</span>${is3D ? '<span class="badge3d">3D</span>' : ''}${l.kind === 'table' ? '<span class="badge-saved">⛓ table</span>' : (l.gristId ? '<span class="badge-saved">Grist</span>' : '')}</div>
                     </div>
-                    ${l.kind === 'table' ? `<button class="layer-act" onclick="A.refreshLayer('${l.id}', event)" title="Rafraîchir depuis la table">🔄</button>` : ''}
+                    ${l.kind === 'table' ? `<button class="layer-act" onclick="A.refreshLayer('${l.id}', event)" title="Rafraîchir depuis la table">🔄</button>` : (CONFIG.grist.ready ? `<button class="layer-act" onclick="A.explodeToTable('${l.id}', event)" title="Exploser en table Grist (1 ligne = 1 objet)">📤</button>` : '')}
                     <button class="layer-act" onclick="A.zoomLayer('${l.id}', event)" title="Zoomer sur la couche">🎯</button>
                     <button class="layer-del" onclick="A.deleteLayer('${l.id}', event)" title="Supprimer">🗑️</button>
                 </div>`;
@@ -1527,7 +1532,10 @@ function renderObjectInspector() {
         </div>`;
 
     if (!multi) {
-        $('insp-body').innerHTML =
+        const isPt = layer.geometryType === 'Point' || layer.geometryType === 'MultiPoint';
+        const modelRow = isPt ? `<div class="slider-row"><div class="slider-head"><span class="lbl">🧩 Modèle 3D</span></div>
+            <select class="input" onchange="A.pickFeatureModel(this.value)"><option value="">— cercle 2D —</option>${allModels().map((m) => `<option value="${m.id}" ${r.modelId === m.id ? 'selected' : ''}>${m.icon} ${m.name}</option>`).join('')}</select></div>` : '';
+        $('insp-body').innerHTML = modelRow +
             slider('f-scale', '📏 Échelle', r.scale, 0.1, 5, 0.05, '×') +
             slider('f-rotationZ', '🔄 Rotation Z (azimut)', r.rotationZ, 0, 360, 5, '°') +
             slider('f-rotationX', '↕️ Rotation X', r.rotationX, -90, 90, 5, '°') +
@@ -1703,6 +1711,27 @@ function setFeatureOverride(layer, idx, param, value) {
 function clearFeatureOverrides(layer, idx) {
     const p = layer.geojson.features[idx]?.properties; if (!p) return;
     ['_scale', '_rotationX', '_rotationY', '_rotationZ', '_offsetX', '_offsetY', '_offsetZ', '_modelId'].forEach((k) => delete p[k]);
+}
+// Write-back des overrides par objet vers la table source (couche kind:'table').
+const OVERRIDE_COLS = { _scale: 'scale', _rotationX: 'rotation_x', _rotationY: 'rotation_y', _rotationZ: 'rotation_z', _offsetX: 'offset_x', _offsetY: 'offset_y', _offsetZ: 'offset_z', _modelId: 'model_id' };
+async function writeBackFeatures(layer, indices) {
+    if (!CONFIG.grist.ready || layer.kind !== 'table' || !layer.sourceTable) return;
+    const feats = indices.map((i) => layer.geojson.features[i]).filter((f) => f && f.properties && f.properties._rowId != null);
+    if (!feats.length) return;
+    const touched = {}; // overrideKey -> colName
+    feats.forEach((f) => { for (const k in OVERRIDE_COLS) if (f.properties[k] != null) touched[k] = OVERRIDE_COLS[k]; });
+    if (!Object.keys(touched).length) return;
+    // ajouter les colonnes de convention manquantes
+    const cols = await grist.docApi.fetchTable(layer.sourceTable);
+    const existing = new Set(Object.keys(cols));
+    const adds = Object.values(touched).filter((c) => !existing.has(c)).map((c) => ['AddColumn', layer.sourceTable, c, { type: c === 'model_id' ? 'Text' : 'Numeric' }]);
+    if (adds.length) await grist.docApi.applyUserActions(adds);
+    const rowIds = feats.map((f) => f.properties._rowId);
+    const colData = {};
+    for (const k in touched) colData[touched[k]] = feats.map((f) => (f.properties[k] == null ? null : f.properties[k]));
+    await grist.docApi.applyUserActions([['BulkUpdateRecord', layer.sourceTable, rowIds, colData]]);
+    // refléter dans les colonnes (cache) pour cohérence à la relecture
+    feats.forEach((f) => { for (const k in touched) f.properties[touched[k]] = f.properties[k]; });
 }
 
 // ============================================================
@@ -1880,6 +1909,28 @@ async function scanGeoTables() {
         } catch (e) { /* table illisible → ignorée */ }
     }
     return out;
+}
+
+// Writer (convention §5, sens descendant) : helpers schéma.
+function sanitizeId(s) {
+    const v = String(s == null ? '' : s).trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    return (/^[a-zA-Z]/.test(v) ? v : '_' + v) || 'Col';
+}
+function inferGristType(vals) {
+    let seen = false, allBool = true, allInt = true, allNum = true;
+    for (const v of vals) {
+        if (v == null || v === '') continue; seen = true;
+        if (typeof v !== 'boolean') allBool = false;
+        const n = Number(v);
+        const isNum = (typeof v === 'number') || (typeof v === 'string' && v.trim() !== '' && isFinite(n));
+        if (!isNum) { allNum = false; allInt = false; }
+        else if (!Number.isInteger(n)) allInt = false;
+    }
+    if (!seen) return 'Text';
+    if (allBool) return 'Bool';
+    if (allInt) return 'Int';
+    if (allNum) return 'Numeric';
+    return 'Text';
 }
 
 const TABLE_SCHEMAS = {
@@ -2128,12 +2179,64 @@ const A = {
             const fc = tableToGeoJSON(cols, gc);
             if (!fc.features.length) { hideLoading(); showToast('Table sans géométrie exploitable', 'warning'); return; }
             const layer = makeLayer(tableId, fc.features[0].geometry.type, fc, null, null);
+            const isPoint = layer.geometryType === 'Point' || layer.geometryType === 'MultiPoint';
+            const hasModelCol = fc.features.some((f) => f.properties && (f.properties.model_id || f.properties.model_glb));
+            if (isPoint && hasModelCol) layer.style.mode = 'library'; // modèle 3D par objet (colonne model_id)
             layer.kind = 'table'; layer.sourceTable = tableId; layer.geometryColumn = gc; layer.source = 'grist-table';
             layer._perObjectColor = fc.features.some((f) => f.properties && f.properties.fill_color);
             finalizeNewLayer(layer);
             hideLoading();
             showToast(`« ${tableId} » liée · ${fc.features.length} objets`, 'success');
         } catch (e) { hideLoading(); showToast('Erreur : ' + e.message, 'error'); }
+    },
+    async explodeToTable(id, e) {
+        if (e) e.stopPropagation();
+        if (!CONFIG.grist.ready) { showToast('Grist requis pour exploser en table', 'warning'); return; }
+        const layer = STATE.layers.find((x) => x.id === id); if (!layer) return;
+        if (layer.kind === 'table') { showToast('Couche déjà liée à une table', 'info'); return; }
+        const feats = layer.geojson?.features || [];
+        if (!feats.length) { showToast('Couche vide', 'warning'); return; }
+        showLoading('Création de la table…');
+        try {
+            // colonnes d'attributs (hors internes _* et géométrie)
+            const propNames = new Set();
+            feats.forEach((f) => Object.keys(f.properties || {}).forEach((k) => { if (!k.startsWith('_') && k !== 'geometry_json') propNames.add(k); }));
+            const attrCols = [...propNames];
+            const colId = {}; attrCols.forEach((n) => colId[n] = sanitizeId(n));
+            // colonnes d'override par objet réellement utilisées
+            const OV = { _scale: 'scale', _rotationX: 'rotation_x', _rotationY: 'rotation_y', _rotationZ: 'rotation_z', _offsetX: 'offset_x', _offsetY: 'offset_y', _offsetZ: 'offset_z' };
+            const ovMap = { scale: 'scale', rotation_x: 'rotationX', rotation_y: 'rotationY', rotation_z: 'rotationZ', offset_x: 'offsetX', offset_y: 'offsetY', offset_z: 'offsetZ' };
+            const ovUsed = {};
+            feats.forEach((f) => { const p = f.properties || {}; for (const k in OV) if (p[k] != null && p[k] !== '') ovUsed[OV[k]] = 1; });
+            const is3D = layer.style?.mode === 'library' || layer.style?.mode === 'custom';
+            const colDefs = [
+                { id: 'geometry_json', fields: { label: 'Géométrie (GeoJSON)', type: 'Text' } },
+                ...attrCols.map((n) => ({ id: colId[n], fields: { label: n, type: inferGristType(feats.map((f) => f.properties?.[n])) } })),
+                ...Object.keys(ovUsed).map((cn) => ({ id: cn, fields: { label: cn, type: 'Numeric' } })),
+            ];
+            if (is3D) colDefs.push({ id: 'model_id', fields: { label: 'model_id', type: 'Text' } });
+            const tableName = sanitizeId('Atlas_' + layer.name);
+            const addRes = await grist.docApi.applyUserActions([['AddTable', tableName, colDefs]]);
+            const actualTable = addRes?.retValues?.[0]?.table_id || tableName;
+            const BATCH = 200;
+            for (let i = 0; i < feats.length; i += BATCH) {
+                const batch = feats.slice(i, i + BATCH);
+                const colData = { geometry_json: batch.map((f) => JSON.stringify(f.geometry)) };
+                attrCols.forEach((n) => { colData[colId[n]] = batch.map((f) => { const v = f.properties?.[n]; return v == null ? null : (typeof v === 'object' ? JSON.stringify(v) : v); }); });
+                for (const cn in ovUsed) colData[cn] = batch.map((f) => resolveFeatureProps(f, layer)[ovMap[cn]] ?? null);
+                if (is3D) colData.model_id = batch.map((f) => resolveFeatureProps(f, layer).modelId || null);
+                await grist.docApi.applyUserActions([['BulkAddRecord', actualTable, Array(batch.length).fill(null), colData]]);
+            }
+            // relier la couche à la nouvelle table (re-fetch → rowIds)
+            const cols = await grist.docApi.fetchTable(actualTable);
+            layer.geojson = tableToGeoJSON(cols, 'geometry_json');
+            layer.kind = 'table'; layer.sourceTable = actualTable; layer.geometryColumn = 'geometry_json'; layer.source = 'grist-table';
+            layer._perObjectColor = layer.geojson.features.some((f) => f.properties && f.properties.fill_color);
+            indexFeatures(layer); removeLayerGfx(layer); addLayerToMap(layer); Models3D.scheduleBuild();
+            saveLayerToGrist(layer, true); markDirty();
+            hideLoading(); showToast(`Table « ${actualTable} » créée · ${feats.length} objets`, 'success');
+            if (STATE.currentModule === 'couches') renderLayersPanel(STATE.currentModule);
+        } catch (err) { hideLoading(); showToast('Erreur : ' + err.message, 'error'); }
     },
     async refreshLayer(id, e) {
         if (e) e.stopPropagation();
@@ -2372,15 +2475,25 @@ const A = {
         }
         Models3D.updateEdited(layer.id, multi ? STATE.selection.features : [STATE.selection.features[0]]);
     },
+    pickFeatureModel(modelId) {
+        const layer = STATE.layers.find((l) => l.id === STATE.selection.layerId); if (!layer) return;
+        const idx = STATE.selection.features[0];
+        setFeatureOverride(layer, idx, 'modelId', modelId || null);
+        const isPt = layer.geometryType === 'Point' || layer.geometryType === 'MultiPoint';
+        if (modelId && isPt && layer.style.mode !== 'library' && layer.style.mode !== 'custom') { layer.style.mode = 'library'; applyPointStyle(layer); }
+        Models3D.forceBuild(); markDirty();
+    },
     resetSelected() {
         const l = STATE.layers.find((x) => x.id === STATE.selection.layerId); if (!l) return;
         STATE.selection.features.forEach((i) => clearFeatureOverrides(l, i));
         multiBaseValues = null; Models3D.updateEdited(l.id, STATE.selection.features); renderInspector(); showToast('Réinitialisé', 'success');
     },
-    applySelected() {
+    async applySelected() {
         const l = STATE.layers.find((x) => x.id === STATE.selection.layerId);
         multiBaseValues = null; markDirty();
-        if (l) saveLayerToGrist(l, true);
+        if (l && l.kind === 'table' && CONFIG.grist.ready) {
+            try { await writeBackFeatures(l, STATE.selection.features); } catch (e) { showToast('Écriture Grist : ' + e.message, 'error'); return; }
+        } else if (l) { saveLayerToGrist(l, true); }
         showToast(`${STATE.selection.features.length} objet(s) enregistré(s)`, 'success');
     },
 
