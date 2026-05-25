@@ -1752,6 +1752,33 @@ async function writeBackFeatures(layer, indices) {
     // refléter dans les colonnes (cache) pour cohérence à la relecture
     feats.forEach((f) => { for (const k in touched) f.properties[touched[k]] = f.properties[k]; });
 }
+// Recharge une couche liée depuis sa table source (sans UI) — pour 🔄 et l'auto-refresh.
+async function reloadLinkedLayer(l) {
+    if (!CONFIG.grist.ready || l.kind !== 'table' || !l.sourceTable || !map) return 0;
+    const cols = await grist.docApi.fetchTable(l.sourceTable);
+    const gc = l.geometryColumn || detectGeometryColumn(cols);
+    l.geojson = tableToGeoJSON(cols, gc);
+    l._perObjectColor = l.geojson.features.some((f) => f.properties && f.properties.fill_color);
+    const isPt = l.geometryType === 'Point' || l.geometryType === 'MultiPoint';
+    const hasModelCol = l.geojson.features.some((f) => f.properties && (f.properties.model_id || f.properties.model_glb));
+    if (isPt && hasModelCol && l.style.mode !== 'library' && l.style.mode !== 'custom') { l.style.mode = 'library'; applyPointStyle(l); }
+    indexFeatures(l);
+    if (map.getSource(l.id)) map.getSource(l.id).setData(l.geojson); else addLayerToMap(l);
+    Models3D.scheduleBuild();
+    return l.geojson.features.length;
+}
+// Auto-refresh des couches liées (au focus / retour sur le widget) — Grist ne pousse
+// pas de mises à jour réactives pour les tables non mappées.
+let _autoRefreshT = null, _lastAutoRefresh = 0;
+function autoRefreshLinked() {
+    if (!CONFIG.grist.ready || !STATE.layers.some((l) => l.kind === 'table')) return;
+    clearTimeout(_autoRefreshT);
+    _autoRefreshT = setTimeout(async () => {
+        if (Date.now() - _lastAutoRefresh < 1500) return;
+        _lastAutoRefresh = Date.now();
+        for (const l of STATE.layers) if (l.kind === 'table') { try { await reloadLinkedLayer(l); } catch (e) {} }
+    }, 250);
+}
 
 // ============================================================
 // IMPORT — OSM (Overpass) & fichier
@@ -2301,14 +2328,8 @@ const A = {
         const l = STATE.layers.find((x) => x.id === id); if (!l || l.kind !== 'table') return;
         showLoading('Rafraîchissement…');
         try {
-            const cols = await grist.docApi.fetchTable(l.sourceTable);
-            const gc = l.geometryColumn || detectGeometryColumn(cols);
-            l.geojson = tableToGeoJSON(cols, gc);
-            l._perObjectColor = l.geojson.features.some((f) => f.properties && f.properties.fill_color);
-            indexFeatures(l);
-            if (map.getSource(l.id)) map.getSource(l.id).setData(l.geojson); else addLayerToMap(l);
-            Models3D.scheduleBuild();
-            hideLoading(); showToast(`Rafraîchie · ${l.geojson.features.length} objets`, 'success');
+            const n = await reloadLinkedLayer(l);
+            hideLoading(); showToast(`Rafraîchie · ${n} objets`, 'success');
             if (STATE.currentModule === 'couches') renderLayersPanel(STATE.currentModule);
         } catch (e2) { hideLoading(); showToast('Erreur : ' + e2.message, 'error'); }
     },
@@ -2680,6 +2701,10 @@ function wireEvents() {
         }
     });
     $('cmd-overlay').addEventListener('click', (e) => { if (e.target.id === 'cmd-overlay') closeCmd(); });
+
+    // Auto-refresh des couches liées au retour sur le widget (édité dans Grist ailleurs).
+    window.addEventListener('focus', autoRefreshLinked);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) autoRefreshLinked(); });
 }
 
 // ============================================================
