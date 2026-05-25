@@ -1532,7 +1532,10 @@ function renderObjectInspector() {
         </div>`;
 
     if (!multi) {
-        $('insp-body').innerHTML =
+        const isPt = layer.geometryType === 'Point' || layer.geometryType === 'MultiPoint';
+        const modelRow = isPt ? `<div class="slider-row"><div class="slider-head"><span class="lbl">🧩 Modèle 3D</span></div>
+            <select class="input" onchange="A.pickFeatureModel(this.value)"><option value="">— cercle 2D —</option>${allModels().map((m) => `<option value="${m.id}" ${r.modelId === m.id ? 'selected' : ''}>${m.icon} ${m.name}</option>`).join('')}</select></div>` : '';
+        $('insp-body').innerHTML = modelRow +
             slider('f-scale', '📏 Échelle', r.scale, 0.1, 5, 0.05, '×') +
             slider('f-rotationZ', '🔄 Rotation Z (azimut)', r.rotationZ, 0, 360, 5, '°') +
             slider('f-rotationX', '↕️ Rotation X', r.rotationX, -90, 90, 5, '°') +
@@ -1708,6 +1711,27 @@ function setFeatureOverride(layer, idx, param, value) {
 function clearFeatureOverrides(layer, idx) {
     const p = layer.geojson.features[idx]?.properties; if (!p) return;
     ['_scale', '_rotationX', '_rotationY', '_rotationZ', '_offsetX', '_offsetY', '_offsetZ', '_modelId'].forEach((k) => delete p[k]);
+}
+// Write-back des overrides par objet vers la table source (couche kind:'table').
+const OVERRIDE_COLS = { _scale: 'scale', _rotationX: 'rotation_x', _rotationY: 'rotation_y', _rotationZ: 'rotation_z', _offsetX: 'offset_x', _offsetY: 'offset_y', _offsetZ: 'offset_z', _modelId: 'model_id' };
+async function writeBackFeatures(layer, indices) {
+    if (!CONFIG.grist.ready || layer.kind !== 'table' || !layer.sourceTable) return;
+    const feats = indices.map((i) => layer.geojson.features[i]).filter((f) => f && f.properties && f.properties._rowId != null);
+    if (!feats.length) return;
+    const touched = {}; // overrideKey -> colName
+    feats.forEach((f) => { for (const k in OVERRIDE_COLS) if (f.properties[k] != null) touched[k] = OVERRIDE_COLS[k]; });
+    if (!Object.keys(touched).length) return;
+    // ajouter les colonnes de convention manquantes
+    const cols = await grist.docApi.fetchTable(layer.sourceTable);
+    const existing = new Set(Object.keys(cols));
+    const adds = Object.values(touched).filter((c) => !existing.has(c)).map((c) => ['AddColumn', layer.sourceTable, c, { type: c === 'model_id' ? 'Text' : 'Numeric' }]);
+    if (adds.length) await grist.docApi.applyUserActions(adds);
+    const rowIds = feats.map((f) => f.properties._rowId);
+    const colData = {};
+    for (const k in touched) colData[touched[k]] = feats.map((f) => (f.properties[k] == null ? null : f.properties[k]));
+    await grist.docApi.applyUserActions([['BulkUpdateRecord', layer.sourceTable, rowIds, colData]]);
+    // refléter dans les colonnes (cache) pour cohérence à la relecture
+    feats.forEach((f) => { for (const k in touched) f.properties[touched[k]] = f.properties[k]; });
 }
 
 // ============================================================
@@ -2451,15 +2475,25 @@ const A = {
         }
         Models3D.updateEdited(layer.id, multi ? STATE.selection.features : [STATE.selection.features[0]]);
     },
+    pickFeatureModel(modelId) {
+        const layer = STATE.layers.find((l) => l.id === STATE.selection.layerId); if (!layer) return;
+        const idx = STATE.selection.features[0];
+        setFeatureOverride(layer, idx, 'modelId', modelId || null);
+        const isPt = layer.geometryType === 'Point' || layer.geometryType === 'MultiPoint';
+        if (modelId && isPt && layer.style.mode !== 'library' && layer.style.mode !== 'custom') { layer.style.mode = 'library'; applyPointStyle(layer); }
+        Models3D.forceBuild(); markDirty();
+    },
     resetSelected() {
         const l = STATE.layers.find((x) => x.id === STATE.selection.layerId); if (!l) return;
         STATE.selection.features.forEach((i) => clearFeatureOverrides(l, i));
         multiBaseValues = null; Models3D.updateEdited(l.id, STATE.selection.features); renderInspector(); showToast('Réinitialisé', 'success');
     },
-    applySelected() {
+    async applySelected() {
         const l = STATE.layers.find((x) => x.id === STATE.selection.layerId);
         multiBaseValues = null; markDirty();
-        if (l) saveLayerToGrist(l, true);
+        if (l && l.kind === 'table' && CONFIG.grist.ready) {
+            try { await writeBackFeatures(l, STATE.selection.features); } catch (e) { showToast('Écriture Grist : ' + e.message, 'error'); return; }
+        } else if (l) { saveLayerToGrist(l, true); }
         showToast(`${STATE.selection.features.length} objet(s) enregistré(s)`, 'success');
     },
 
