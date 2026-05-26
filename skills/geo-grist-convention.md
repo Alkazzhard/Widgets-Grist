@@ -1,11 +1,22 @@
-# Convention « Données géo dans Grist » (v0)
+# Convention « Données géo dans Grist » (v1)
 
-Contrat **partagé** entre l'importeur **qgis2grist** (écrit) et le canva **Atlas**
-(lit / rend / édite). But : faire de Grist + Atlas un canva universel pour cartes
-et projets QGIS, de façon **standardisée et réversible**.
+**Contrat partagé** de la gamme géospatiale, autour de **Grist comme source de
+vérité**. Trois briques, une seule convention :
 
-> Statut : **spécification, non encore implémentée**. Sert de référence avant tout
-> développement. À faire évoluer ici (et pas dans le code en silo).
+| Brique | Rôle | Sens |
+|---|---|---|
+| **QgisRemoteMCP** (serveur, PyQGIS) | exporte des livrables natifs (`.qgz`, GPKG, stylés) **et** vers Grist ; automatisation IA | QGIS ↔ Grist (lourd) |
+| **qgis2grist** (navigateur) | importe les exports QGIS (qgis2web / `.qgz` / GPKG / QField / QML) → tables Grist | QGIS → Grist (interactif) |
+| **Atlas** (navigateur) | lit / rend (2D+3D) / édite / filtre / raconte (storymaps) ; export léger | Grist ↔ carte |
+
+But : **canva universel** cartes + projets QGIS, standardisé et réversible. Les deux
+entrées (QgisRemoteMCP serveur, qgis2grist navigateur) doivent **écrire les mêmes
+tables standard** → Atlas est agnostique de la source.
+
+> Statut : **v1 — implémenté côté Atlas** (lecture/liaison, auto-entablement,
+> config par objet, contrôles, storymaps). Reste à aligner formellement
+> QgisRemoteMCP/qgis2grist sur ce contrat (cf. §11). Faire évoluer ce doc, pas le
+> code en silo ; **versionner** (bump l'entête à chaque changement de contrat).
 
 ---
 
@@ -187,8 +198,51 @@ Explicite / confirmé :
 
 ---
 
-## 9. Hors-périmètre v0 (à spécifier plus tard)
+## 9. Contrôles (rack de filtres/animation) — implémenté
 
-- Schéma précis du **rack de contrôles** déclaratif (sérialisation).
-- Sync **sélection inter-widget** (clic carte ↔ curseur de ligne).
-- Groupes/arbre de couches avancé, multi-géométrie.
+Par couche, un tableau `controls` (persisté dans `StyleJSON._controls` côté Grist,
+et dans le projet JSON) :
+```json
+[{ "field": "...", "type": "time|range|select", "active": true,
+   "min": <num|ts>, "max": <num|ts>, "values": ["..."] }]
+```
+- `time` (champ date), `range` (numérique), `select` (catégoriel) — **auto-détectés**
+  depuis les champs. Filtrent **la carte 2D ET la 3D** (même prédicat). `time` anime.
+- Précédence d'orientation : `styleJSON.orientation.field` lie l'azimut à un champ.
+
+## 10. Récit / Storymaps — table `Atlas_Story`
+
+Séquence d'étapes rejouables (présentations). Une ligne = une étape :
+
+| Colonne | Rôle |
+|---|---|
+| `Step` (Int) | ordre |
+| `Title` (Text) | titre de l'étape |
+| `Description` (Text) | texte narratif |
+| `StateJSON` (Text) | snapshot : `camera` (center/zoom/pitch/bearing), `projection`, `timeOfDay`, `date`, `terrain3D`, `layers[]` (visibilité + contrôles actifs) |
+
+Atlas capture / rejoue (mode présentation). Éditable côté Grist. (Médias en PJ : à venir.)
+
+## 11. Rôles & conformité (les 3 briques)
+
+- **Écrivains** (QgisRemoteMCP, qgis2grist) : produisent des **tables géo conformes**
+  (§2) — colonne géométrie WGS84, attributs typés, `fill_color` par objet optionnel,
+  `model_id`/`model_glb` optionnels. **Même schéma quelle que soit la source.**
+- **Lecteur/éditeur** (Atlas) : monte les couches déclarées, applique style/contrôles,
+  édite par objet (write-back colonnes), n'invente rien hors convention.
+- **Aller-retour** :
+  - **léger / navigateur** = Atlas exporte **GeoJSON + QML** (style) → relisible QGIS.
+  - **lourd / serveur** = QgisRemoteMCP reconstruit `.qgz`/GPKG natifs depuis Grist.
+- **Auto-entablement** (Atlas) : tout import devient une table standard (la donnée de
+  référence) ; repli blob hors Grist.
+- **Suppression** (Atlas) : « retirer d'Atlas » (garde la table) vs « supprimer la
+  table » (`RemoveTable`).
+- **Test de conformité** (recommandé) : un écrivain doit pouvoir relire ce qu'il a
+  écrit via le lecteur de référence (détection géométrie + types + style).
+
+## 12. Hors-périmètre / à venir
+
+- **GPKG** (binaire) et `.qgz` : réservés à QgisRemoteMCP (serveur).
+- **Upload de PJ in-widget** : dépend du CORS de l'instance (sinon attache native).
+- Médias storymap (images en PJ), transitions ; arbre de couches/groupes ; sélection
+  inter-widget (clic carte ↔ ligne).
